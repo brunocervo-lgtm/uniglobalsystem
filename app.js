@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-0815";
+const APP_VERSION = "20260518-0905";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -29,11 +29,12 @@ const views = {
   alerta: "Alerta",
   sucata: "Sucata por peso",
   venda: "Saida / Venda",
+  inventarioVendas: "Inventario de vendas",
   relatorios: "Relatorios",
   configuracao: "Configuracao"
 };
 
-const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "venda", "relatorios", "configuracao"];
+const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "venda", "inventarioVendas", "relatorios", "configuracao"];
 const collaboratorViews = ["cadastro"];
 const state = migrate(load());
 let activeProduct = null;
@@ -69,6 +70,12 @@ function migrate(data) {
   data.sequence ||= 1;
   data.cloudUpdatedAt ||= "";
   data.users = Array.isArray(data.users) && data.users.length ? data.users : DEFAULT_USERS;
+  data.items.forEach(item => stampCreate(item));
+  data.pendingItems.forEach(item => stampCreate(item));
+  data.sales.forEach(sale => stampCreate(sale));
+  data.invoices.forEach(invoice => stampCreate(invoice));
+  data.contacts.forEach(contact => stampCreate(contact));
+  data.users.forEach(user => stampCreate(user));
   return data;
 }
 
@@ -244,6 +251,35 @@ function getCurrentUser() {
 
 function isAdmin() {
   return getCurrentUser()?.role === "admin";
+}
+
+function currentUsername() {
+  try {
+    return getCurrentUser()?.username || sessionStorage.getItem(AUTH_KEY) || "sistema";
+  } catch {
+    return sessionStorage.getItem(AUTH_KEY) || "sistema";
+  }
+}
+
+function stampCreate(target) {
+  const now = new Date().toISOString();
+  target.createdAt ||= now;
+  target.createdBy ||= currentUsername();
+  target.updatedAt ||= "";
+  target.updatedBy ||= "";
+  return target;
+}
+
+function stampUpdate(target) {
+  target.updatedAt = new Date().toISOString();
+  target.updatedBy = currentUsername();
+  return target;
+}
+
+function auditLine(record = {}) {
+  const created = record.createdAt ? new Date(record.createdAt).toLocaleString("pt-BR") : "-";
+  const updated = record.updatedAt ? new Date(record.updatedAt).toLocaleString("pt-BR") : "-";
+  return `Criado por ${record.createdBy || "-"} em ${created}${record.updatedBy ? ` | Editado por ${record.updatedBy} em ${updated}` : ""}`;
 }
 
 function allowedViews() {
@@ -615,8 +651,7 @@ function buildItem(form, photo = "") {
   item.suggestedValue = num(item.suggestedValue);
   item.saleValue = num(item.saleValue);
   item.entryDate = item.entryDate || today;
-  item.createdAt = new Date().toISOString();
-  item.createdBy = getCurrentUser()?.username || "admin";
+  stampCreate(item);
   item.validationStatus = isAdmin() ? "approved" : "pending";
   return item;
 }
@@ -628,10 +663,11 @@ function findDuplicateByEan(ean, ignoreId = "") {
 }
 
 function submitInventoryItem(item) {
+  stampCreate(item);
   const duplicate = findDuplicateByEan(item.ean, item.id);
   if (duplicate && isAdmin()) {
     duplicate.quantity = num(duplicate.quantity) + num(item.quantity);
-    duplicate.updatedAt = new Date().toISOString();
+    stampUpdate(duplicate);
     duplicate.notes = [duplicate.notes, `Entrada adicional por EAN ${item.ean}: ${item.quantity} un.`].filter(Boolean).join("\n");
     state.sequence += 1;
     save();
@@ -661,7 +697,7 @@ function approvePendingItem(id) {
   const duplicate = findDuplicateByEan(item.ean, item.id);
   if (duplicate) {
     duplicate.quantity = num(duplicate.quantity) + num(item.quantity);
-    duplicate.updatedAt = new Date().toISOString();
+    stampUpdate(duplicate);
     duplicate.notes = [duplicate.notes, `Item validado e somado por EAN ${item.ean}: ${item.quantity} un.`].filter(Boolean).join("\n");
     save();
     renderAll();
@@ -669,6 +705,9 @@ function approvePendingItem(id) {
     return;
   }
   item.validationStatus = "approved";
+  item.approvedAt = new Date().toISOString();
+  item.approvedBy = currentUsername();
+  stampUpdate(item);
   item.approvedBy = getCurrentUser()?.username || "admin";
   item.approvedAt = new Date().toISOString();
   state.items.unshift(item);
@@ -1157,6 +1196,41 @@ function renderSalesList() {
   });
 }
 
+function renderSalesInventory() {
+  const target = document.querySelector("#salesInventory");
+  if (!target) return;
+  const count = document.querySelector("#salesInventoryCount");
+  if (count) count.textContent = `${state.sales.length} vendas registradas`;
+  if (!state.sales.length) {
+    target.innerHTML = `<div class="empty">Nenhuma venda registrada.</div>`;
+    return;
+  }
+  target.innerHTML = `<table>
+    <thead><tr>
+      <th>Data</th><th>Codigo</th><th>Produto</th><th>Cliente</th><th>Vendedor</th><th>Medida</th><th>Valor</th><th>Lucro</th><th>Status</th><th>Rastreabilidade</th>
+    </tr></thead>
+    <tbody>${state.sales.map(sale => {
+      const item = state.items.find(product => product.id === sale.itemId) || {};
+      const measure = num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`;
+      return `<tr class="clickable-row" data-open-sale="${sale.id}">
+        <td>${escapeHtml(sale.soldAt || "-")}</td>
+        <td>${escapeHtml(item.code || "-")}</td>
+        <td>${escapeHtml(item.name || "Produto")}</td>
+        <td>${escapeHtml(sale.customer || "-")}</td>
+        <td>${escapeHtml(sale.seller || "-")}</td>
+        <td>${escapeHtml(measure)}</td>
+        <td>${money.format(num(sale.soldValue))}</td>
+        <td>${money.format(num(sale.profit))}</td>
+        <td>${escapeHtml(sale.status || "concluida")}</td>
+        <td>${escapeHtml(auditLine(sale))}</td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table>`;
+  target.querySelectorAll("[data-open-sale]").forEach(row => {
+    row.addEventListener("click", () => openSale(row.dataset.openSale));
+  });
+}
+
 function saleDetails(id) {
   const sale = state.sales.find(item => item.id === id);
   if (!sale) return null;
@@ -1189,6 +1263,10 @@ function openSale(id) {
     ["Forma de pagamento", sale.payment],
     ["Canal", sale.channel],
     ["Lucro", money.format(num(sale.profit))],
+    ["Criado por", sale.createdBy],
+    ["Criado em", sale.createdAt ? new Date(sale.createdAt).toLocaleString("pt-BR") : ""],
+    ["Editado por", sale.updatedBy],
+    ["Editado em", sale.updatedAt ? new Date(sale.updatedAt).toLocaleString("pt-BR") : ""],
     ["Nota fiscal", invoice ? `${invoice.number} · ${invoice.status}` : "sem nota"],
     ["Cancelamento/estorno", sale.reversalReason],
     ["Feito por", sale.reversedBy],
@@ -1245,16 +1323,19 @@ function reverseSale(id, status) {
       product.quantity = num(product.quantity) + (num(sale.soldQuantity) || 1);
     }
     if (product.status === "vendido") product.status = "em estoque";
+    stampUpdate(product);
   }
   sale.status = status;
   sale.reversalReason = reason.trim() || "sem motivo informado";
   sale.reversedAt = new Date().toISOString();
-  sale.reversedBy = getCurrentUser()?.username || "admin";
+  sale.reversedBy = currentUsername();
   sale.reversalValue = sale.soldValue;
+  stampUpdate(sale);
   const invoice = state.invoices.find(note => note.saleId === sale.id);
   if (invoice) {
     invoice.status = "cancelada";
     invoice.notes = [invoice.notes, `${status} em ${new Date().toLocaleString("pt-BR")}: ${sale.reversalReason}`].filter(Boolean).join("\n");
+    stampUpdate(invoice);
   }
   save();
   toast(status === "cancelada" ? "Venda cancelada e estoque restaurado" : "Estorno registrado e estoque restaurado");
@@ -1303,7 +1384,7 @@ function renderUsers() {
   if (!list) return;
   list.innerHTML = state.users.map(user => `<article class="item-row user-row">
     <div class="thumb-placeholder">${user.role === "admin" ? "AD" : "CO"}</div>
-    <div><strong>${escapeHtml(user.username)}</strong><span>${user.role === "admin" ? "Administrador" : "Colaborador"}</span></div>
+    <div><strong>${escapeHtml(user.username)}</strong><span>${user.role === "admin" ? "Administrador" : "Colaborador"} Â· ${escapeHtml(auditLine(user))}</span></div>
     <div class="row-actions">
       <span class="pill">${escapeHtml(user.role)}</span>
       <button class="secondary-btn small-btn" data-edit-user="${user.id}">Editar</button>
@@ -1514,7 +1595,9 @@ function openContact(id) {
     ["Status", contact.status],
     ["Observações", contact.notes],
     ["Criado por", contact.createdBy],
-    ["Criado em", contact.createdAt ? new Date(contact.createdAt).toLocaleString("pt-BR") : ""]
+    ["Criado em", contact.createdAt ? new Date(contact.createdAt).toLocaleString("pt-BR") : ""],
+    ["Editado por", contact.updatedBy],
+    ["Editado em", contact.updatedAt ? new Date(contact.updatedAt).toLocaleString("pt-BR") : ""]
   ].map(([label, value]) => `<div class="detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "-")}</strong></div>`).join("");
   document.querySelector("#contactDialog").showModal();
 }
@@ -1567,12 +1650,17 @@ function render() {
   renderInvoiceOptions();
   renderInvoices();
   renderSalesList();
+  renderSalesInventory();
   renderReports();
   renderUsers();
   renderContacts();
   renderSellersDashboard();
   updateAlertBadge();
   bindProductOpeners(document);
+}
+
+function renderAll() {
+  render();
 }
 
 function applyPermissions() {
@@ -1616,7 +1704,7 @@ function openProduct(id, source = "stock") {
   const invoiceLink = item.purchaseInvoiceFile
     ? `<a href="${item.purchaseInvoiceFile}" target="_blank" rel="noreferrer">${escapeHtml(item.purchaseInvoiceFileName || "Abrir NF anexada")}</a>`
     : "Sem anexo";
-  document.querySelector("#dialogPhoto").insertAdjacentHTML("beforeend", `<div class="trace-box"><strong>Rastreabilidade</strong><span>Fornecedor: ${escapeHtml(item.supplier || "-")}</span><span>NF: ${escapeHtml(item.purchaseInvoice || "-")}</span><span>Compra: ${escapeHtml(item.purchaseDate || "-")}</span><span>${invoiceLink}</span></div>`);
+  document.querySelector("#dialogPhoto").insertAdjacentHTML("beforeend", `<div class="trace-box"><strong>Rastreabilidade</strong><span>Fornecedor: ${escapeHtml(item.supplier || "-")}</span><span>NF: ${escapeHtml(item.purchaseInvoice || "-")}</span><span>Compra: ${escapeHtml(item.purchaseDate || "-")}</span><span>${escapeHtml(auditLine(item))}</span><span>${invoiceLink}</span></div>`);
   ["ean", "name", "category", "subcategory", "brand", "model", "quantity", "weight", "paidValue", "marketValue", "suggestedValue", "saleValue", "supplier", "purchaseInvoice", "purchaseDate", "purchaseInvoiceKey", "location", "status", "notes"].forEach(name => {
     if (form.elements[name]) form.elements[name].value = item[name] ?? "";
   });
@@ -1642,9 +1730,9 @@ function saveActiveProduct() {
     supplier: data.supplier,
     purchaseInvoice: data.purchaseInvoice,
     purchaseDate: data.purchaseDate,
-    purchaseInvoiceKey: data.purchaseInvoiceKey,
-    updatedAt: new Date().toISOString()
+    purchaseInvoiceKey: data.purchaseInvoiceKey
   });
+  stampUpdate(item);
   return item;
 }
 
@@ -1868,7 +1956,7 @@ document.querySelector("#scrapForm").addEventListener("submit", (e) => {
     quantity: 1, weight, condition: "sucata", paidValue: paid, marketValue: sell,
     suggestedValue: sell, saleValue: sell, location: "", entryDate: today,
     status: "em estoque", adLink: "", notes: `Valor pago/kg: ${data.paidPerKg}. Venda/kg: ${data.sellPerKg}.`,
-    createdAt: new Date().toISOString(), createdBy: getCurrentUser()?.username || "admin", validationStatus: "approved"
+    validationStatus: "approved"
   });
   e.target.reset();
   updateScrapPreview();
@@ -1954,7 +2042,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
       cashbackAccount,
       cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback",
       updatedAt: new Date().toISOString(),
-      updatedBy: getCurrentUser()?.username || "admin"
+      updatedBy: currentUsername()
     });
     const invoice = state.invoices.find(note => note.saleId === sale.id);
     if (invoice) {
@@ -1988,6 +2076,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
     cashbackAccount,
     cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback"
   };
+  stampCreate(sale);
   state.sales.unshift(sale);
   if (isScrap) {
     item.weight = Math.max(0, num(item.weight) - soldWeight);
@@ -2001,8 +2090,9 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   item.finalSoldValue = sale.soldValue;
   item.customer = data.customer;
   item.channel = data.channel;
+  stampUpdate(item);
   if (data.invoiceEnabled === "sim") {
-    state.invoices.unshift({
+    state.invoices.unshift(stampCreate({
       id: crypto.randomUUID(),
       saleId: sale.id,
       number: data.invoiceNumber || `NF-${String(state.invoices.length + 1).padStart(4, "0")}`,
@@ -2011,8 +2101,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
       value: sale.soldValue,
       status: data.invoiceStatus,
       notes: data.invoiceNotes,
-      createdAt: new Date().toISOString()
-    });
+    }));
   }
   save();
   await syncCloudNow(false);
@@ -2132,11 +2221,11 @@ async function saveSaleEdit(form) {
     cashbackAccount,
     cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback",
     updatedAt: new Date().toISOString(),
-    updatedBy: getCurrentUser()?.username || "admin"
+    updatedBy: currentUsername()
   });
   let invoice = state.invoices.find(note => note.saleId === sale.id);
   if (data.invoiceEnabled === "sim" && !invoice) {
-    invoice = { id: crypto.randomUUID(), saleId: sale.id, createdAt: new Date().toISOString() };
+    invoice = stampCreate({ id: crypto.randomUUID(), saleId: sale.id });
     state.invoices.unshift(invoice);
   }
   if (invoice) {
@@ -2146,6 +2235,7 @@ async function saveSaleEdit(form) {
     invoice.status = data.invoiceStatus || "pendente";
     invoice.notes = data.invoiceNotes || "";
     invoice.customer = sale.customer;
+    stampUpdate(invoice);
   }
   editingSaleId = "";
   save();
@@ -2191,29 +2281,39 @@ document.querySelector("#invoiceForm")?.addEventListener("submit", (e) => {
 document.querySelector("#stockSearch").addEventListener("input", renderStock);
 document.querySelector("#stockCategory").addEventListener("change", renderStock);
 
-document.querySelector("#userForm").addEventListener("submit", (e) => {
+document.querySelector("#userForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!isAdmin()) return toast("Apenas administrador pode criar usuarios");
+  if (e.target.dataset.saving === "true") return;
+  e.target.dataset.saving = "true";
   const data = Object.fromEntries(new FormData(e.target).entries());
   const username = data.username.trim();
-  if (editingUserId) {
-    const user = state.users.find(item => item.id === editingUserId);
-    if (!user) return;
-    const adminCount = state.users.filter(item => item.role === "admin").length;
-    if (user.role === "admin" && data.role !== "admin" && adminCount <= 1) return toast("Mantenha pelo menos um administrador");
-    if (state.users.some(item => item.username === username && item.id !== editingUserId)) return toast("Usuario ja existe");
-    Object.assign(user, { username, password: data.password, role: data.role, updatedAt: new Date().toISOString() });
-    if (getCurrentUser()?.id === editingUserId) sessionStorage.setItem(AUTH_KEY, username);
-    editingUserId = "";
-    e.target.querySelector("button[type='submit']").textContent = "Adicionar usuario";
-    toast("Usuario atualizado");
-  } else {
-    if (state.users.some(user => user.username === username)) return toast("Usuario ja existe");
-    state.users.push({ id: crypto.randomUUID(), username, password: data.password, role: data.role });
-    toast("Usuario adicionado");
+  try {
+    if (!username || !data.password) return toast("Informe usuario e senha");
+    if (editingUserId) {
+      const user = state.users.find(item => item.id === editingUserId);
+      if (!user) return toast("Usuario nao encontrado");
+      const adminCount = state.users.filter(item => item.role === "admin").length;
+      if (user.role === "admin" && data.role !== "admin" && adminCount <= 1) return toast("Mantenha pelo menos um administrador");
+      if (state.users.some(item => item.username === username && item.id !== editingUserId)) return toast("Usuario ja existe");
+      Object.assign(user, { username, password: data.password, role: data.role });
+      stampUpdate(user);
+      if (getCurrentUser()?.id === editingUserId) sessionStorage.setItem(AUTH_KEY, username);
+      editingUserId = "";
+      e.target.querySelector("button[type='submit']").textContent = "Adicionar usuario";
+      toast("Usuario atualizado");
+    } else {
+      if (state.users.some(user => user.username === username)) return toast("Usuario ja existe");
+      state.users.push(stampCreate({ id: crypto.randomUUID(), username, password: data.password, role: data.role }));
+      toast(data.role === "colaborador" ? "Colaborador adicionado" : "Administrador adicionado");
+    }
+    e.target.reset();
+    save({ skipRender: true });
+    await syncCloudNow(false);
+    renderAll();
+  } finally {
+    e.target.dataset.saving = "";
   }
-  e.target.reset();
-  save();
 });
 
 document.querySelector("#contactForm").addEventListener("submit", async (e) => {
@@ -2233,18 +2333,17 @@ document.querySelector("#contactForm").addEventListener("submit", async (e) => {
       e.target.dataset.saving = "";
       return toast("Cadastro nao encontrado para editar");
     }
-    Object.assign(contact, data, { updatedAt: new Date().toISOString(), updatedBy: getCurrentUser()?.username || "admin" });
+    Object.assign(contact, data);
+    stampUpdate(contact);
     editingContactId = "";
     e.target.dataset.editingId = "";
     e.target.querySelector("button[type='submit']").textContent = "Salvar cadastro";
     toast("Cadastro atualizado");
   } else {
-    state.contacts.unshift({
+    state.contacts.unshift(stampCreate({
       id: crypto.randomUUID(),
-      ...data,
-      createdAt: new Date().toISOString(),
-      createdBy: getCurrentUser()?.username || "admin"
-    });
+      ...data
+    }));
     toast("Cliente / fornecedor salvo");
   }
   save({ skipRender: true });

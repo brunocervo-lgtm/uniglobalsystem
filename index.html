@@ -37,6 +37,7 @@
         <button data-view="alerta" data-admin-only="true">Alerta</button>
         <button data-view="sucata">Sucata por peso</button>
         <button data-view="venda">Saida / Venda</button>
+        <button data-view="inventarioVendas">Inventario de vendas</button>
         <button data-view="relatorios">Relatorios</button>
         <button data-view="configuracao" data-admin-only="true">Configuração</button>
       </nav>
@@ -366,6 +367,16 @@
         </div>
       </section>
 
+      <section id="inventarioVendas" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Inventario de vendas</h2>
+            <span id="salesInventoryCount"></span>
+          </div>
+          <div id="salesInventory" class="data-table"></div>
+        </div>
+      </section>
+
       <section id="relatorios" class="view">
         <div class="panel dashboard-filter-panel">
           <div class="panel-head">
@@ -595,6 +606,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260518-0815"></script>
+    <script src="app.js?v=20260518-0905"></script>
   </body>
 </html>
