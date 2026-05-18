@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UNIGLOBAL STOCK AI</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="auth-locked">
+    <section id="loginScreen" class="login-screen">
+      <form id="loginForm" class="login-card">
+        <div class="brand login-brand">
+          <img class="brand-logo full" src="assets/uniglobal-logo.png" alt="UNIGLOBAL Solutions" />
+        </div>
+        <h1>Acesso ao sistema</h1>
+        <label>Usuario <input name="username" autocomplete="username" required /></label>
+        <label>Senha <input name="password" type="password" autocomplete="current-password" required /></label>
+        <p id="loginError" class="login-error"></p>
+        <button class="primary-btn" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-logo" src="assets/uniglobal-logo.png" alt="UNIGLOBAL Solutions" />
+        <div>
+          <strong>UNIGLOBAL</strong>
+          <span>STOCK AI</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Navegacao principal">
+        <button class="active" data-view="dashboard">Dashboard</button>
+        <button data-view="estoque">Estoque</button>
+        <button data-view="cadastro">Cadastro de item</button>
+        <button data-view="contatos">Cliente / Fornecedor</button>
+        <button data-view="vendedores">Vendedores</button>
+        <button data-view="alerta" data-admin-only="true">Alerta</button>
+        <button data-view="sucata">Sucata por peso</button>
+        <button data-view="venda">Saida / Venda</button>
+        <button data-view="relatorios">Relatorios</button>
+        <button data-view="configuracao" data-admin-only="true">Configuração</button>
+      </nav>
+    </aside>
+
+    <main class="app">
+      <header class="topbar">
+        <button id="menuToggle" class="icon-btn" aria-label="Abrir menu">☰</button>
+        <div>
+          <p class="eyebrow">Controle inteligente de estoque</p>
+          <h1 id="pageTitle">Dashboard</h1>
+          <span id="modeBadge" class="mode-badge">Principal</span>
+        </div>
+        <div class="top-actions">
+          <button id="seedBtn" class="ghost-btn">Dados demo</button>
+          <button id="mainDataBtn" class="ghost-btn">Principal</button>
+          <button id="logoutBtn" class="ghost-btn">Sair</button>
+        </div>
+      </header>
+
+      <section id="dashboard" class="view active">
+        <div class="dashboard-shell">
+          <section class="panel dashboard-filter-panel">
+            <div class="panel-head">
+              <h2>Dashboards gerenciais</h2>
+              <span>Indicadores, gráficos e análises</span>
+            </div>
+            <div class="dashboard-tabs" id="dashboardTabs">
+              <button class="active" data-dashboard-tab="principal">Principal</button>
+              <button data-dashboard-tab="anual">Anual</button>
+              <button data-dashboard-tab="mensal">Mensal</button>
+              <button data-dashboard-tab="estoque">Estoque</button>
+              <button data-dashboard-tab="compraVenda">Compra x Venda</button>
+              <button data-dashboard-tab="giro">Giro</button>
+              <button data-dashboard-tab="rentabilidade">Rentabilidade</button>
+            </div>
+            <div class="dashboard-filters">
+              <label>Data inicial <input id="dashStartDate" type="date" /></label>
+              <label>Data final <input id="dashEndDate" type="date" /></label>
+              <label>Categoria
+                <select id="dashCategory">
+                  <option value="">Todas</option>
+                  <option>Sucata</option>
+                  <option>Peça usada</option>
+                  <option>Produto de revenda</option>
+                </select>
+              </label>
+              <label>Cliente <input id="dashClient" placeholder="Cliente" /></label>
+              <label>Produto <input id="dashProduct" placeholder="Produto" /></label>
+              <label>Marca <input id="dashBrand" placeholder="Marca" /></label>
+            </div>
+            <div class="dashboard-actions">
+              <button id="exportDashboardPdf" class="secondary-btn">Exportar PDF</button>
+              <button id="exportDashboardExcel" class="secondary-btn">Exportar Excel</button>
+              <button id="exportDashboardCsv" class="secondary-btn">Exportar CSV</button>
+              <button id="exportStockBtn" class="secondary-btn">Exportar estoque Excel</button>
+              <button id="exportSalesBtn" class="secondary-btn">Exportar vendas Excel</button>
+            </div>
+          </section>
+          <div id="dashboardContent" class="dashboard-content"></div>
+        </div>
+      </section>
+
+      <section id="estoque" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Estoque</h2>
+            <span id="stockCountLabel"></span>
+          </div>
+          <div class="stock-toolbar">
+            <input id="stockSearch" placeholder="Buscar por nome, codigo, marca, modelo ou localizacao" />
+            <select id="stockCategory">
+              <option value="">Todas as categorias</option>
+              <option>Sucata</option>
+              <option>Peça usada</option>
+              <option>Produto de revenda</option>
+            </select>
+          </div>
+          <div id="stockGrid" class="stock-grid"></div>
+        </div>
+      </section>
+
+      <section id="cadastro" class="view">
+        <form id="itemForm" class="panel form-panel">
+          <div class="panel-head">
+            <h2>Cadastrar item</h2>
+            <span id="nextCode"></span>
+          </div>
+          <div class="form-grid">
+            <label class="photo-field">
+              <span>Foto do produto</span>
+              <input name="photo" type="file" accept="image/*" capture="environment" />
+              <small>A foto tenta preencher o cadastro automaticamente.</small>
+              <img id="photoPreview" alt="" />
+            </label>
+            <div class="field-group">
+              <label>Nome do produto <input name="name" required placeholder="Ex: Motor WEG 2CV" /></label>
+              <label>EAN
+                <div class="ean-field">
+                  <input name="ean" placeholder="Codigo de barras / EAN" inputmode="numeric" />
+                  <label class="ean-camera-btn" title="Ler EAN por foto ou camera">
+                    📷
+                    <input id="eanPhoto" type="file" accept="image/*" capture="environment" />
+                  </label>
+                </div>
+                <small id="eanReaderStatus">Use a camera para ler codigo de barras.</small>
+              </label>
+              <label>Categoria
+                <select name="category">
+                  <option>Sucata</option>
+                  <option>Peça usada</option>
+                  <option>Produto de revenda</option>
+                </select>
+              </label>
+              <label>Subcategoria <input name="subcategory" placeholder="Motor, placa, metal, ferramenta..." /></label>
+              <label>Marca <input name="brand" placeholder="Marca" /></label>
+              <label>Modelo <input name="model" placeholder="Modelo" /></label>
+              <label>Quantidade <input name="quantity" type="number" min="0" step="1" value="1" /></label>
+              <label>Peso em kg <input name="weight" type="number" min="0" step="0.01" /></label>
+              <label>Estado
+                <select name="condition">
+                  <option>usado</option>
+                  <option>novo</option>
+                  <option>sucata</option>
+                  <option>funcionando</option>
+                  <option>não funcionando</option>
+                  <option>desconhecido</option>
+                </select>
+              </label>
+              <label>Valor pago <input name="paidValue" type="number" min="0" step="0.01" /></label>
+              <label>Valor de mercado estimado <input name="marketValue" type="number" min="0" step="0.01" /></label>
+              <label>Valor sugerido de venda <input name="suggestedValue" type="number" min="0" step="0.01" /></label>
+              <label>Valor escolhido para venda <input name="saleValue" type="number" min="0" step="0.01" /></label>
+              <label>Fornecedor
+                <input name="supplier" list="supplierOptions" placeholder="Selecione ou digite fornecedor" />
+                <datalist id="supplierOptions"></datalist>
+              </label>
+              <label>NF de compra <input name="purchaseInvoice" placeholder="Numero da nota" /></label>
+              <label>Data da compra <input name="purchaseDate" type="date" /></label>
+              <label>Chave de acesso NF <input name="purchaseInvoiceKey" placeholder="44 digitos da NF-e" /></label>
+              <label>Localização <input name="location" placeholder="Galpão A / Prateleira 3" /></label>
+              <label>Data de entrada <input name="entryDate" type="date" /></label>
+              <label>Status
+                <select name="status">
+                  <option>em estoque</option>
+                  <option>anunciado</option>
+                  <option>vendido</option>
+                  <option>descartado</option>
+                </select>
+              </label>
+              <label>Link do anúncio <input name="adLink" type="url" placeholder="https://" /></label>
+            </div>
+            <label class="wide">Arquivo/foto da NF de compra
+              <input name="purchaseInvoiceFile" type="file" accept="image/*,.pdf" />
+            </label>
+            <label class="wide">Observações <textarea name="notes" rows="4"></textarea></label>
+          </div>
+          <div class="actions">
+            <button type="button" id="marketBtn" class="secondary-btn">Pesquisar preço de mercado</button>
+            <button type="submit" class="primary-btn">Salvar no estoque</button>
+          </div>
+          <div id="aiResult" class="ai-result"></div>
+          <div id="priceResults" class="price-results"></div>
+          <input id="priceQuery" type="hidden" />
+          <button id="priceSearch" type="button" hidden>Pesquisar</button>
+        </form>
+        <section id="collaboratorPendingPanel" class="panel collaborator-pending-panel" hidden>
+          <div class="panel-head">
+            <h2>Itens cadastrados por mim</h2>
+            <span>Pendentes de validacao do administrador</span>
+          </div>
+          <div id="collaboratorPendingList" class="inventory-list"></div>
+        </section>
+      </section>
+
+      <section id="alerta" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Alerta</h2>
+              <span>Itens aguardando validação do administrador</span>
+          </div>
+          <div id="pendingList" class="inventory-list"></div>
+        </div>
+      </section>
+
+      <section id="contatos" class="view">
+        <div class="content-grid">
+          <form id="contactForm" class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>Cliente / Fornecedor</h2>
+              <span>Cadastro comercial</span>
+            </div>
+            <div class="form-grid two">
+              <label>Tipo
+                <select name="type">
+                  <option>Cliente</option>
+                  <option>Fornecedor</option>
+                  <option>Cliente e fornecedor</option>
+                  <option>Vendedor</option>
+                </select>
+              </label>
+              <label>Nome / Razão social <input name="name" required placeholder="Nome do cliente ou fornecedor" /></label>
+              <label>CPF / CNPJ <input name="document" placeholder="Documento" /></label>
+              <label>Telefone <input name="phone" placeholder="WhatsApp / telefone" /></label>
+              <label>E-mail <input name="email" type="email" placeholder="email@empresa.com" /></label>
+              <label>Contato responsável <input name="contactPerson" placeholder="Pessoa de contato" /></label>
+              <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" /></label>
+              <label>Endereço <input name="address" placeholder="Rua, número, cidade" /></label>
+              <label>Status
+                <select name="status">
+                  <option>ativo</option>
+                  <option>inativo</option>
+                </select>
+              </label>
+              <label class="wide">Observações <textarea name="notes" rows="4"></textarea></label>
+            </div>
+            <div class="actions"><button class="primary-btn">Salvar cadastro</button></div>
+          </form>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Cadastros</h2>
+              <span id="contactsCount"></span>
+            </div>
+            <div id="contactsList" class="inventory-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="sucata" class="view">
+        <form id="scrapForm" class="panel form-panel slim">
+          <div class="panel-head">
+            <h2>Sucata por peso</h2>
+            <span>Cadastro rápido</span>
+          </div>
+          <div class="form-grid two">
+            <label>Tipo de material
+              <select name="material">
+                <option>ferro</option>
+                <option>cobre</option>
+                <option>alumínio</option>
+                <option>inox</option>
+                <option>eletrônico</option>
+                <option>misto</option>
+              </select>
+            </label>
+            <label>Peso <input name="weight" type="number" min="0" step="0.01" required /></label>
+            <label>Valor pago por kg <input name="paidPerKg" type="number" min="0" step="0.01" required /></label>
+            <label>Valor estimado venda/kg <input name="sellPerKg" type="number" min="0" step="0.01" required /></label>
+          </div>
+          <div id="scrapPreview" class="calculation"></div>
+          <div class="actions"><button class="primary-btn">Salvar sucata</button></div>
+        </form>
+      </section>
+
+      <section id="vendedores" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Vendedores</h2>
+            <span>Vendas e cashback</span>
+          </div>
+          <div id="sellersDashboard" class="dashboard-content"></div>
+        </div>
+      </section>
+
+      <section id="venda" class="view">
+        <div class="content-grid">
+          <form id="saleForm" class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>Registrar venda</h2>
+              <span>Venda total ou parcial</span>
+            </div>
+            <div class="form-grid two">
+              <label>Item <select name="itemId" id="saleItem"></select></label>
+              <label>Data da venda <input name="soldAt" type="date" required /></label>
+              <label id="saleMeasureLabel">Medida vendida
+                <div class="measure-field">
+                  <input name="soldMeasure" type="number" min="0" step="0.01" />
+                  <span id="saleMeasureUnit">un.</span>
+                </div>
+              </label>
+              <label id="unitSaleLabel">Valor por unidade/kg <input name="unitSaleValue" type="number" min="0" step="0.01" /></label>
+              <label>Valor total vendido <input name="soldValue" type="number" min="0" step="0.01" required /></label>
+              <label>Cliente
+                <input name="customer" list="customerOptions" placeholder="Selecione ou digite o cliente" />
+                <datalist id="customerOptions"></datalist>
+              </label>
+              <label>Vendedor
+                <input name="seller" list="sellerOptions" placeholder="Selecione ou digite o vendedor" />
+                <datalist id="sellerOptions"></datalist>
+              </label>
+              <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Forma de pagamento <input name="payment" placeholder="Pix, dinheiro, cartão..." /></label>
+              <label>Cashback usado (R$) <input name="cashbackUsed" type="number" min="0" step="0.01" value="0" /></label>
+              <div id="cashbackBalanceInfo" class="calc-card compact-info">Selecione um vendedor/cliente para ver saldo de cashback.</div>
+              <label>Canal de venda
+                <select name="channel">
+                  <option>OLX</option>
+                  <option>Mercado Livre</option>
+                  <option>WhatsApp</option>
+                  <option>presencial</option>
+                </select>
+              </label>
+              <label>Emitir nota?
+                <select name="invoiceEnabled" id="invoiceEnabled">
+                  <option value="nao">Não</option>
+                  <option value="sim">Sim</option>
+                </select>
+              </label>
+              <label>Número da nota <input name="invoiceNumber" placeholder="NF-0001" /></label>
+              <label>CPF / CNPJ na nota <input name="invoiceDocument" placeholder="Documento do cliente" /></label>
+              <label>Status da nota
+                <select name="invoiceStatus">
+                  <option>pendente</option>
+                  <option>emitida</option>
+                  <option>cancelada</option>
+                </select>
+              </label>
+              <label class="wide">Observações da nota <textarea name="invoiceNotes" rows="3"></textarea></label>
+            </div>
+            <div id="salePreview" class="calculation"></div>
+            <div class="actions"><button class="primary-btn">Registrar saída</button></div>
+          </form>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Vendas realizadas</h2>
+              <span id="salesCount"></span>
+            </div>
+            <div id="salesList" class="inventory-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="relatorios" class="view">
+        <div class="panel dashboard-filter-panel">
+          <div class="panel-head">
+            <h2>Relatórios em gráficos</h2>
+            <span>Análise visual do estoque e vendas</span>
+          </div>
+          <div class="dashboard-tabs" id="reportsTabs">
+            <button class="active" data-report-tab="principal">Principal</button>
+            <button data-report-tab="anual">Anual</button>
+            <button data-report-tab="mensal">Mensal</button>
+            <button data-report-tab="estoque">Estoque</button>
+            <button data-report-tab="compraVenda">Compra x Venda</button>
+            <button data-report-tab="giro">Giro</button>
+            <button data-report-tab="rentabilidade">Rentabilidade</button>
+          </div>
+        </div>
+        <div id="reportsCharts" class="dashboard-content"></div>
+      </section>
+
+      <section id="configuracao" class="view">
+        <div class="content-grid">
+          <form id="userForm" class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>Configuração</h2>
+              <span>Adicionar usuários e senha</span>
+            </div>
+            <div class="form-grid two">
+              <label>Usuario <input name="username" required autocomplete="off" /></label>
+              <label>Senha <input name="password" type="password" required autocomplete="new-password" /></label>
+              <label>Tipo de usuario
+                <select name="role">
+                  <option value="admin">Administrador</option>
+                  <option value="colaborador">Colaborador</option>
+                </select>
+              </label>
+            </div>
+            <div class="actions"><button class="primary-btn">Adicionar usuario</button></div>
+          </form>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Usuarios cadastrados</h2>
+              <span>Administrador / Colaborador</span>
+            </div>
+            <div id="usersList" class="inventory-list"></div>
+          </section>
+          <section class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>IA por foto</h2>
+              <span>Identificação real pela imagem</span>
+            </div>
+            <div class="calc-card">
+              <strong>Chave local</strong>
+              <p>Informe a chave da OpenAI para o sistema identificar o produto pela foto. Em produção, esta chave deve ficar no backend.</p>
+            </div>
+            <label>Chave da OpenAI
+              <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off" />
+            </label>
+            <div class="actions">
+              <button id="saveOpenAiKey" type="button" class="primary-btn">Salvar chave</button>
+              <button id="removeOpenAiKey" type="button" class="secondary-btn">Remover chave</button>
+            </div>
+          </section>
+          <section class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>Banco online</h2>
+              <span>Supabase</span>
+            </div>
+            <div id="cloudStatus" class="calc-card compact-info">Status: aguardando sincronizacao.</div>
+            <div class="actions">
+              <button id="syncCloudBtn" type="button" class="primary-btn">Sincronizar agora</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="productDialog" class="product-dialog">
+      <form id="productEditForm" method="dialog">
+        <div class="panel-head">
+          <h2 id="productDialogTitle">Produto</h2>
+          <button type="button" id="closeProductDialog" class="icon-btn visible" aria-label="Fechar">×</button>
+        </div>
+        <div class="dialog-grid">
+          <div id="dialogPhoto" class="dialog-photo"></div>
+          <div class="form-grid two">
+            <label>EAN <input name="ean" /></label>
+            <label>Nome <input name="name" required /></label>
+            <label>Categoria
+              <select name="category">
+                <option>Sucata</option>
+                <option>Peça usada</option>
+                <option>Produto de revenda</option>
+              </select>
+            </label>
+            <label>Subcategoria <input name="subcategory" /></label>
+            <label>Marca <input name="brand" /></label>
+            <label>Modelo <input name="model" /></label>
+            <label>Quantidade <input name="quantity" type="number" min="0" step="1" /></label>
+            <label>Peso kg <input name="weight" type="number" min="0" step="0.01" /></label>
+            <label>Valor pago <input name="paidValue" type="number" min="0" step="0.01" /></label>
+            <label>Valor mercado <input name="marketValue" type="number" min="0" step="0.01" /></label>
+            <label>Valor sugerido <input name="suggestedValue" type="number" min="0" step="0.01" /></label>
+            <label>Valor venda <input name="saleValue" type="number" min="0" step="0.01" /></label>
+            <label>Fornecedor <input name="supplier" /></label>
+            <label>NF de compra <input name="purchaseInvoice" /></label>
+            <label>Data da compra <input name="purchaseDate" type="date" /></label>
+            <label>Chave de acesso NF <input name="purchaseInvoiceKey" /></label>
+            <label>Localizacao <input name="location" /></label>
+            <label>Status
+              <select name="status">
+                <option>em estoque</option>
+                <option>anunciado</option>
+                <option>vendido</option>
+                <option>descartado</option>
+              </select>
+            </label>
+            <label class="wide">Observacoes <textarea name="notes" rows="4"></textarea></label>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" id="dialogMarketBtn" class="secondary-btn">Pesquisar preço</button>
+          <button type="button" id="approveFromDialog" class="secondary-btn">Inserir no estoque</button>
+          <button type="submit" class="primary-btn">Salvar alteracoes</button>
+        </div>
+        <div id="dialogPriceResults" class="price-results"></div>
+      </form>
+    </dialog>
+
+    <dialog id="contactDialog" class="product-dialog">
+      <div class="panel-head">
+        <h2 id="contactDialogTitle">Cadastro</h2>
+        <button type="button" id="closeContactDialog" class="icon-btn visible" aria-label="Fechar">×</button>
+      </div>
+      <div id="contactDialogBody" class="detail-grid"></div>
+      <div class="actions">
+        <button type="button" id="editContactFromDialog" class="secondary-btn">Editar</button>
+        <button type="button" id="deleteContactFromDialog" class="danger-btn">Apagar</button>
+      </div>
+    </dialog>
+
+    <dialog id="saleDialog" class="product-dialog">
+      <div class="panel-head">
+        <h2 id="saleDialogTitle">Venda</h2>
+        <button type="button" id="closeSaleDialog" class="icon-btn visible" aria-label="Fechar">×</button>
+      </div>
+      <div id="saleDialogBody" class="detail-grid"></div>
+      <div class="actions">
+        <button type="button" id="printSalePdf" class="secondary-btn">Imprimir em PDF</button>
+        <button type="button" id="editSaleFromDialog" class="secondary-btn">Editar venda</button>
+        <button type="button" id="cancelSaleFromDialog" class="secondary-btn">Cancelar venda</button>
+        <button type="button" id="refundSaleFromDialog" class="danger-btn">Estornar cliente</button>
+      </div>
+    </dialog>
+
+    <dialog id="saleEditDialog" class="product-dialog">
+      <form id="saleEditForm" method="dialog">
+        <div class="panel-head">
+          <h2>Editar venda</h2>
+          <button type="button" id="closeSaleEditDialog" class="icon-btn visible" aria-label="Fechar">x</button>
+        </div>
+        <div class="form-grid two">
+          <label>Item
+            <input id="saleEditItemName" disabled />
+            <input name="itemId" type="hidden" />
+          </label>
+          <label>Data da venda <input name="soldAt" type="date" required /></label>
+          <label id="saleEditMeasureLabel">Medida vendida
+            <div class="measure-field">
+              <input name="soldMeasure" type="number" min="0" step="0.01" />
+              <span id="saleEditMeasureUnit">un.</span>
+            </div>
+          </label>
+          <label id="saleEditUnitLabel">Valor por unidade/kg <input name="unitSaleValue" type="number" min="0" step="0.01" /></label>
+          <label>Valor total vendido <input name="soldValue" type="number" min="0" step="0.01" required /></label>
+          <label>Cliente <input name="customer" list="customerOptions" /></label>
+          <label>Vendedor <input name="seller" list="sellerOptions" /></label>
+          <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" /></label>
+          <label>Forma de pagamento <input name="payment" placeholder="Pix, dinheiro, cartao..." /></label>
+          <label>Cashback usado (R$) <input name="cashbackUsed" type="number" min="0" step="0.01" /></label>
+          <label>Canal de venda
+            <select name="channel">
+              <option>OLX</option>
+              <option>Mercado Livre</option>
+              <option>WhatsApp</option>
+              <option>presencial</option>
+            </select>
+          </label>
+          <label>Emitir nota?
+            <select name="invoiceEnabled">
+              <option value="nao">Nao</option>
+              <option value="sim">Sim</option>
+            </select>
+          </label>
+          <label>Numero da nota <input name="invoiceNumber" /></label>
+          <label>CPF / CNPJ na nota <input name="invoiceDocument" /></label>
+          <label>Status da nota
+            <select name="invoiceStatus">
+              <option>pendente</option>
+              <option>emitida</option>
+              <option>cancelada</option>
+            </select>
+          </label>
+          <label class="wide">Observacoes da nota <textarea name="invoiceNotes" rows="3"></textarea></label>
+        </div>
+        <div id="saleEditPreview" class="calculation"></div>
+        <div class="actions">
+          <button type="button" id="cancelSaleEdit" class="ghost-btn">Cancelar</button>
+          <button class="primary-btn">Salvar venda</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dashboardDrillDialog" class="product-dialog">
+      <div class="panel-head">
+        <h2 id="dashboardDrillTitle">Detalhes</h2>
+        <button type="button" id="closeDashboardDrill" class="icon-btn visible" aria-label="Fechar">×</button>
+      </div>
+      <div id="dashboardDrillBody" class="inventory-list"></div>
+    </dialog>
+
+    <dialog id="sellerDialog" class="product-dialog">
+      <div class="panel-head">
+        <h2 id="sellerDialogTitle">Vendedor</h2>
+        <button type="button" id="closeSellerDialog" class="icon-btn visible" aria-label="Fechar">×</button>
+      </div>
+      <div id="sellerDialogBody" class="dashboard-content"></div>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+    <script src="app.js?v=20260518-0035"></script>
+  </body>
+</html>
