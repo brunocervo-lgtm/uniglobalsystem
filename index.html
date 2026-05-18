@@ -308,6 +308,7 @@
             </div>
             <div class="form-grid two">
               <label>Item <select name="itemId" id="saleItem"></select></label>
+              <div id="saleItemPreview" class="sale-item-preview wide"></div>
               <label>Data da venda <input name="soldAt" type="date" required /></label>
               <label id="saleMeasureLabel">Medida vendida
                 <div class="measure-field">
@@ -499,6 +500,7 @@
         <div class="actions">
           <button type="button" id="dialogMarketBtn" class="secondary-btn">Pesquisar preço</button>
           <button type="button" id="approveFromDialog" class="secondary-btn">Inserir no estoque</button>
+          <button type="button" id="rejectFromDialog" class="danger-btn">Rejeitar produto</button>
           <button type="submit" class="primary-btn">Salvar alteracoes</button>
         </div>
         <div id="dialogPriceResults" class="price-results"></div>
@@ -606,6 +608,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260518-0905"></script>
+    <script src="app.js?v=20260518-0945"></script>
   </body>
 </html>

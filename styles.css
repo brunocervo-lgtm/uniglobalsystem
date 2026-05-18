@@ -584,6 +584,40 @@ textarea { resize: vertical; }
 .calc-card, .result-card {
   border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #fffdf7;
 }
+.sale-item-preview {
+  align-self: stretch;
+}
+.sale-item-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf7;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.sale-item-card:hover {
+  border-color: rgba(199,154,53,.75);
+}
+.sale-item-photo {
+  width: 82px;
+  height: 82px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.sale-item-card strong,
+.sale-item-card small {
+  display: block;
+}
+.sale-item-card small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 700;
+}
 .compact-info {
   align-self: end;
   min-height: 43px;

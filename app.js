@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-0905";
+const APP_VERSION = "20260518-0945";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -708,12 +708,30 @@ function approvePendingItem(id) {
   item.approvedAt = new Date().toISOString();
   item.approvedBy = currentUsername();
   stampUpdate(item);
-  item.approvedBy = getCurrentUser()?.username || "admin";
-  item.approvedAt = new Date().toISOString();
   state.items.unshift(item);
   save();
   renderAll();
   toast(`${item.code} inserido no estoque`);
+}
+
+function rejectPendingItem(id, reason = "") {
+  const index = state.pendingItems.findIndex(item => item.id === id);
+  if (index < 0) return;
+  const [item] = state.pendingItems.splice(index, 1);
+  item.validationStatus = "rejected";
+  item.rejectedAt = new Date().toISOString();
+  item.rejectedBy = currentUsername();
+  item.rejectionReason = reason;
+  save();
+  renderAll();
+  toast(`${item.code} rejeitado`);
+}
+
+function deletePendingItem(id) {
+  const item = state.pendingItems.find(product => product.id === id);
+  if (!item) return;
+  if (!confirm(`Excluir o cadastro pendente ${item.code} - ${item.name || "sem nome"}?`)) return;
+  rejectPendingItem(id, "Excluido diretamente no alerta");
 }
 
 function metrics() {
@@ -768,7 +786,10 @@ function stockCard(item) {
 
 function pendingCard(item) {
   const action = isAdmin()
-    ? `<button class="primary-btn" data-approve="${item.id}">Inserir no estoque</button>`
+    ? `<div class="actions inline-actions">
+        <button class="primary-btn small-btn" data-open-product="${item.id}" data-product-source="pending">Validar</button>
+        <button class="danger-btn small-btn" data-delete-pending="${item.id}">Excluir</button>
+      </div>`
     : `<button class="secondary-btn" data-open-product="${item.id}" data-product-source="pending">Editar cadastro</button>`;
   return `<article class="pending-card">
     <button class="stock-open" data-open-product="${item.id}" data-product-source="pending">${thumb(item, "stock-photo")}</button>
@@ -1071,9 +1092,13 @@ function renderPending() {
   const list = document.querySelector("#pendingList");
   if (!list) return;
   list.innerHTML = state.pendingItems.length ? state.pendingItems.map(pendingCard).join("") : `<div class="empty">Nenhum item aguardando validacao.</div>`;
-  list.querySelectorAll("[data-approve]").forEach(button => {
-    button.addEventListener("click", () => approvePendingItem(button.dataset.approve));
+  list.querySelectorAll("[data-delete-pending]").forEach(button => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deletePendingItem(button.dataset.deletePending);
+    });
   });
+  bindProductOpeners(list);
 }
 
 function renderCollaboratorPending() {
@@ -1087,14 +1112,38 @@ function renderCollaboratorPending() {
   list.innerHTML = items.length
     ? items.map(pendingCard).join("")
     : `<div class="empty">Nenhum item pendente. Quando o administrador aprovar, o cadastro sai daqui e entra no estoque.</div>`;
+  bindProductOpeners(list);
 }
 
 function renderSaleOptions() {
   const select = document.querySelector("#saleItem");
   const sellable = state.items.filter(i => i.status !== "vendido" && i.status !== "descartado");
-  select.innerHTML = sellable.map(i => `<option value="${i.id}">${escapeHtml(i.code)} · ${escapeHtml(i.name)}</option>`).join("");
+  select.innerHTML = sellable.map(i => `<option value="${i.id}">${escapeHtml(i.code)} Â· ${escapeHtml(i.name)}</option>`).join("");
   renderCustomerOptions();
+  renderSaleItemPreview();
   updateSaleMeasureUI();
+}
+
+function renderSaleItemPreview() {
+  const target = document.querySelector("#saleItemPreview");
+  const form = document.querySelector("#saleForm");
+  if (!target || !form) return;
+  const item = state.items.find(product => product.id === form.itemId.value);
+  if (!item) {
+    target.innerHTML = `<div class="empty">Selecione um item para visualizar a foto e os dados.</div>`;
+    return;
+  }
+  const available = item.category === "Sucata" ? `${num(item.weight)} kg` : `${num(item.quantity)} un.`;
+  const value = num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue);
+  target.innerHTML = `<button type="button" class="sale-item-card" data-open-product="${item.id}" data-product-source="stock">
+    ${thumb(item, "sale-item-photo")}
+    <span>
+      <strong>${escapeHtml(item.code)} Â· ${escapeHtml(item.name || "Sem nome")}</strong>
+      <small>EAN ${escapeHtml(item.ean || "-")} Â· ${escapeHtml(item.category || "-")} Â· Disponivel: ${escapeHtml(available)}</small>
+      <small>${escapeHtml(item.location || "sem localizacao")} Â· Valor base: ${money.format(value)}</small>
+    </span>
+  </button>`;
+  bindProductOpeners(target);
 }
 
 function renderCustomerOptions() {
@@ -1708,7 +1757,9 @@ function openProduct(id, source = "stock") {
   ["ean", "name", "category", "subcategory", "brand", "model", "quantity", "weight", "paidValue", "marketValue", "suggestedValue", "saleValue", "supplier", "purchaseInvoice", "purchaseDate", "purchaseInvoiceKey", "location", "status", "notes"].forEach(name => {
     if (form.elements[name]) form.elements[name].value = item[name] ?? "";
   });
-  document.querySelector("#approveFromDialog").style.display = source === "pending" && isAdmin() ? "" : "none";
+  const canValidatePending = source === "pending" && isAdmin();
+  document.querySelector("#approveFromDialog").style.display = canValidatePending ? "" : "none";
+  document.querySelector("#rejectFromDialog").style.display = canValidatePending ? "" : "none";
   document.querySelector("#dialogPriceResults").innerHTML = "";
   dialog.showModal();
 }
@@ -1983,6 +2034,7 @@ document.querySelector("input[name='unitSaleValue']").addEventListener("input", 
 document.querySelector("#saleItem").addEventListener("change", () => {
   document.querySelector("input[name='unitSaleValue']").dataset.saleUnitMode = "auto";
   syncSaleUnitValue(true);
+  renderSaleItemPreview();
   updateSaleMeasureUI();
   updateSalePreview();
 });
@@ -2118,6 +2170,7 @@ function updateSalePreview() {
   const item = state.items.find(i => i.id === form.itemId.value);
   if (!item) {
     document.querySelector("#salePreview").innerHTML = "";
+    renderSaleItemPreview();
     return;
   }
   const isScrap = item.category === "Sucata";
@@ -2463,6 +2516,17 @@ document.querySelector("#approveFromDialog").addEventListener("click", async () 
   save();
   document.querySelector("#productDialog").close();
   approvePendingItem(item.id);
+  await syncCloudNow(false);
+});
+
+document.querySelector("#rejectFromDialog").addEventListener("click", async () => {
+  if (!activeProduct || activeProduct.source !== "pending") return;
+  const item = saveActiveProduct();
+  if (!item) return;
+  const reason = prompt("Motivo para rejeitar o produto:");
+  if (reason === null) return;
+  document.querySelector("#productDialog").close();
+  rejectPendingItem(item.id, reason.trim() || "Rejeitado pelo administrador");
   await syncCloudNow(false);
 });
 
