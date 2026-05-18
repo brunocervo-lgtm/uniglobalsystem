@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-0045";
+const APP_VERSION = "20260518-0815";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -307,18 +307,67 @@ function imageFromFile(file) {
   });
 }
 
-async function readBarcodeFromImage(file) {
-  if (!("BarcodeDetector" in window)) {
-    throw new Error("Este navegador nao suporta leitura automatica de codigo de barras. Digite o EAN manualmente.");
-  }
+function loadExternalScript(src, globalName) {
+  return new Promise((resolve, reject) => {
+    if (globalName && window[globalName]) return resolve(window[globalName]);
+    const existing = document.querySelector(`script[data-src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(globalName ? window[globalName] : true), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Nao foi possivel carregar o leitor de codigo de barras.")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.src = src;
+    script.onload = () => resolve(globalName ? window[globalName] : true);
+    script.onerror = () => reject(new Error("Nao foi possivel carregar o leitor de codigo de barras."));
+    document.head.appendChild(script);
+  });
+}
+
+async function readBarcodeWithNativeDetector(file) {
+  if (!("BarcodeDetector" in window)) return "";
   const formats = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"];
   const supported = await BarcodeDetector.getSupportedFormats?.() || formats;
-  const detector = new BarcodeDetector({ formats: formats.filter(format => supported.includes(format)) });
+  const activeFormats = formats.filter(format => supported.includes(format));
+  if (!activeFormats.length) return "";
+  const detector = new BarcodeDetector({ formats: activeFormats });
   const image = await imageFromFile(file);
-  const barcodes = await detector.detect(image);
-  URL.revokeObjectURL(image.src);
-  const code = barcodes.find(item => item.rawValue)?.rawValue || "";
-  if (!code) throw new Error("Nao encontrei codigo de barras na foto. Tente aproximar e focar melhor.");
+  try {
+    const barcodes = await detector.detect(image);
+    return barcodes.find(item => item.rawValue)?.rawValue || "";
+  } finally {
+    URL.revokeObjectURL(image.src);
+  }
+}
+
+async function readBarcodeWithHtml5QrCode(file) {
+  await loadExternalScript("https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js", "Html5Qrcode");
+  let holder = document.querySelector("#eanReaderHolder");
+  if (!holder) {
+    holder = document.createElement("div");
+    holder.id = "eanReaderHolder";
+    holder.style.display = "none";
+    document.body.appendChild(holder);
+  }
+  const scanner = new Html5Qrcode("eanReaderHolder", { verbose: false });
+  try {
+    return await scanner.scanFile(file, false);
+  } finally {
+    try { await scanner.clear(); } catch {}
+  }
+}
+
+async function readBarcodeFromImage(file) {
+  let code = "";
+  try { code = await readBarcodeWithNativeDetector(file); } catch {}
+  if (!code) {
+    try { code = await readBarcodeWithHtml5QrCode(file); } catch (error) {
+      throw new Error(`${error.message} Digite o EAN manualmente ou tente uma foto mais nítida do codigo.`);
+    }
+  }
+  if (!code) throw new Error("Nao encontrei codigo de barras na foto. Tente aproximar, focar melhor e deixar o EAN inteiro visivel.");
   return code.replace(/\D/g, "");
 }
 
