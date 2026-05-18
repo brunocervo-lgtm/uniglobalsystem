@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-1025";
+const APP_VERSION = "20260518-1045";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -1692,12 +1692,14 @@ function updateCashbackBalanceInfo() {
   if (!info) return;
   const account = saleCashbackAccount();
   const balance = getSellerCashbackBalance(account);
-  const used = num(document.querySelector("#saleForm").cashbackUsed.value);
+  const form = document.querySelector("#saleForm");
+  const used = num(form.cashbackUsed.value);
+  const remainingPayment = Math.max(0, num(form.soldValue.value) - used);
   if (!account) {
     info.innerHTML = "Selecione um vendedor/cliente para ver saldo de cashback.";
     return;
   }
-  info.innerHTML = `<strong>Cashback disponível de ${escapeHtml(account)}: ${money.format(balance)}</strong><span>Usando nesta venda: ${money.format(used)} · Saldo após compra: ${money.format(balance - used)}</span>`;
+  info.innerHTML = `<strong>Cashback disponivel de ${escapeHtml(account)}: ${money.format(balance)}</strong><span>Usando nesta venda: ${money.format(used)} · Saldo apos compra: ${money.format(balance - used)} · A pagar: ${money.format(remainingPayment)}</span>`;
 }
 
 function openContact(id) {
@@ -1982,6 +1984,22 @@ document.querySelector("#logoutBtn").addEventListener("click", () => {
   lockApp();
 });
 
+document.querySelector("#refreshAppBtn")?.addEventListener("click", async () => {
+  const button = document.querySelector("#refreshAppBtn");
+  const oldText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Atualizando...";
+  try {
+    await loadCloudState();
+    renderAll();
+    updateCloudStatus(`<strong>Status: atualizado</strong><span>${cloudStateSummary()} - ${new Date().toLocaleString("pt-BR")}</span>`);
+    toast("Sistema atualizado");
+  } finally {
+    button.disabled = false;
+    button.textContent = oldText;
+  }
+});
+
 document.querySelector("#menuToggle").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
 document.querySelector("input[name='entryDate']").value = today;
 document.querySelector("input[name='soldAt']").value = today;
@@ -2059,6 +2077,7 @@ document.querySelector("#itemForm").addEventListener("submit", async (e) => {
     document.querySelector("#priceQuery").value = "";
     document.querySelector("#eanReaderStatus").textContent = "Use a camera para ler codigo de barras.";
     renderAll();
+    showItemSavedConfirmation(item);
     await syncCloudNow(false);
   } finally {
     e.target.dataset.saving = "";
@@ -2066,6 +2085,17 @@ document.querySelector("#itemForm").addEventListener("submit", async (e) => {
     submitButton.textContent = originalButtonText;
   }
 });
+
+function showItemSavedConfirmation(item) {
+  const dialog = document.querySelector("#itemSavedDialog");
+  const body = document.querySelector("#itemSavedBody");
+  if (!dialog || !body) return;
+  const adminText = isAdmin()
+    ? "O item foi salvo diretamente no estoque."
+    : "O item foi enviado para validacao do administrador.";
+  body.innerHTML = `<strong>${escapeHtml(item.code)} - ${escapeHtml(item.name || "Produto")}</strong><p>${adminText}</p>`;
+  dialog.showModal();
+}
 
 document.querySelector("#marketBtn").addEventListener("click", async () => {
   const form = document.querySelector("#itemForm");
@@ -2161,6 +2191,12 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   const cashbackUsed = num(data.cashbackUsed);
   const sellerBalance = getSellerCashbackBalance(cashbackAccount);
   if (cashbackUsed > 0 && cashbackUsed > sellerBalance) return toast("Cashback usado maior que o saldo do vendedor");
+  if (cashbackUsed > 0 && cashbackUsed < num(data.soldValue) && !String(data.payment || "").trim()) {
+    return toast("Informe como sera pago o saldo restante da venda");
+  }
+  if (cashbackUsed > 0 && cashbackUsed >= num(data.soldValue) && !String(data.payment || "").trim()) {
+    data.payment = "Cashback";
+  }
   const generatesCashback = !(registeredCustomer.type === "Vendedor" && cashbackUsed > 0);
   const cashbackValue = generatesCashback ? num(data.soldValue) * (num(data.cashbackPercent) / 100) : 0;
   const costBase = isScrap && num(item.weight)
@@ -2344,6 +2380,12 @@ async function saveSaleEdit(form) {
   if (cashbackUsed > 0 && cashbackUsed > getSellerCashbackBalance(cashbackAccount) + oldUsedCredit) {
     return toast("Cashback usado maior que o saldo do vendedor");
   }
+  if (cashbackUsed > 0 && cashbackUsed < num(data.soldValue) && !String(data.payment || "").trim()) {
+    return toast("Informe como sera pago o saldo restante da venda");
+  }
+  if (cashbackUsed > 0 && cashbackUsed >= num(data.soldValue) && !String(data.payment || "").trim()) {
+    data.payment = "Cashback";
+  }
   const generatesCashback = !(registeredCustomer.type === "Vendedor" && cashbackUsed > 0);
   const cashbackValue = generatesCashback ? num(data.soldValue) * (num(data.cashbackPercent) / 100) : 0;
   const originalMeasure = num(sale.soldWeight) || num(sale.soldQuantity) || 1;
@@ -2515,6 +2557,16 @@ document.querySelector("#removeOpenAiKey").addEventListener("click", () => {
 
 document.querySelector("#syncCloudBtn")?.addEventListener("click", () => {
   syncCloudNow(true);
+});
+
+document.querySelector("#closeItemSavedDialog")?.addEventListener("click", () => {
+  document.querySelector("#itemSavedDialog")?.close();
+});
+
+document.querySelector("#newItemAfterSave")?.addEventListener("click", () => {
+  document.querySelector("#itemSavedDialog")?.close();
+  switchView("cadastro");
+  document.querySelector("#itemForm")?.querySelector("input[name='name']")?.focus();
 });
 
 document.querySelector("#seedBtn")?.addEventListener("click", async () => {

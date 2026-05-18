@@ -51,6 +51,7 @@
           <h1 id="pageTitle">Dashboard</h1>
         </div>
         <div class="top-actions">
+          <button id="refreshAppBtn" class="secondary-btn" type="button">Atualizar</button>
           <button id="logoutBtn" class="ghost-btn">Sair</button>
         </div>
       </header>
@@ -524,6 +525,17 @@
       </div>
     </dialog>
 
+    <dialog id="itemSavedDialog" class="product-dialog">
+      <div class="panel-head">
+        <h2>Item enviado</h2>
+        <button type="button" id="closeItemSavedDialog" class="icon-btn visible" aria-label="Fechar">x</button>
+      </div>
+      <div id="itemSavedBody" class="calc-card"></div>
+      <div class="actions">
+        <button type="button" id="newItemAfterSave" class="primary-btn">Inserir novo produto</button>
+      </div>
+    </dialog>
+
     <dialog id="saleDialog" class="product-dialog">
       <div class="panel-head">
         <h2 id="saleDialogTitle">Venda</h2>
@@ -613,6 +625,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260518-1025"></script>
+    <script src="app.js?v=20260518-1045"></script>
   </body>
 </html>
