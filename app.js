@@ -1,15 +1,13 @@
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const today = new Date().toISOString().slice(0, 10);
 const DB_KEY = "uniglobal-stock-ai-v1";
-const DEMO_KEY = "uniglobal-stock-ai-demo-v1";
-const MODE_KEY = "uniglobal-stock-ai-mode";
 const AUTH_KEY = "uniglobal-stock-ai-user";
 const OPENAI_KEY = "uniglobal-stock-ai-openai-key";
 const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-0035";
+const APP_VERSION = "20260518-0045";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -19,8 +17,6 @@ const DEFAULT_USERS = [
 if (new URLSearchParams(location.search).get("reset") === "all") {
   const blank = { items: [], pendingItems: [], sales: [], invoices: [], contacts: [], users: DEFAULT_USERS, sequence: 1 };
   localStorage.setItem(DB_KEY, JSON.stringify(blank));
-  localStorage.setItem(DEMO_KEY, JSON.stringify(blank));
-  localStorage.setItem(MODE_KEY, "main");
   sessionStorage.removeItem(AUTH_KEY);
 }
 
@@ -52,7 +48,7 @@ let cloudSaveTimer = null;
 let cloudLastError = "";
 
 function activeKey() {
-  return localStorage.getItem(MODE_KEY) === "demo" ? DEMO_KEY : DB_KEY;
+  return DB_KEY;
 }
 
 function blankState(users = DEFAULT_USERS) {
@@ -84,7 +80,7 @@ function save(options = {}) {
 }
 
 function cloudEnabled() {
-  return SUPABASE_URL && SUPABASE_KEY && localStorage.getItem(MODE_KEY) !== "demo";
+  return SUPABASE_URL && SUPABASE_KEY;
 }
 
 async function supabaseRequest(path, options = {}) {
@@ -1514,14 +1510,6 @@ function updateAlertBadge() {
 
 function render() {
   document.querySelector("#nextCode").textContent = `Proximo codigo: ${code()}`;
-  document.querySelector("#seedBtn").style.display = isAdmin() ? "" : "none";
-  document.querySelector("#mainDataBtn").style.display = isAdmin() ? "" : "none";
-  const modeBadge = document.querySelector("#modeBadge");
-  if (modeBadge) {
-    const demo = localStorage.getItem(MODE_KEY) === "demo";
-    modeBadge.textContent = demo ? "Demonstração" : "Principal";
-    modeBadge.classList.toggle("demo", demo);
-  }
   renderDashboard();
   renderStock();
   renderPending();
@@ -1653,17 +1641,6 @@ function dashboardExportRows() {
   if (activeDashboardTab === "giro") return data.sales.map(sale => ({ produto: saleProduct(sale).name, entrada: saleProduct(sale).entryDate, venda: sale.soldAt, dias: Math.max(0, Math.floor((new Date(sale.soldAt) - new Date(saleProduct(sale).entryDate || sale.soldAt)) / 86400000)) }));
   if (activeDashboardTab === "rentabilidade") return data.sales.map(sale => ({ produto: saleProduct(sale).name, categoria: saleProduct(sale).category, valor_pago: saleCost(sale), valor_vendido: sale.soldValue, lucro: sale.profit, margem: margin(num(sale.soldValue), num(sale.profit)).toFixed(1) }));
   return dashboardRowsByMonth(data);
-}
-
-async function setMode(mode) {
-  if (localStorage.getItem(MODE_KEY) !== "demo") await syncCloudNow(false);
-  localStorage.setItem(MODE_KEY, mode);
-  Object.keys(state).forEach(key => delete state[key]);
-  Object.assign(state, migrate(load()));
-  if (mode === "main") await loadCloudState();
-  applyPermissions();
-  render();
-  switchView(isAdmin() ? "dashboard" : "cadastro");
 }
 
 document.querySelectorAll(".nav button").forEach(btn => {
@@ -2192,7 +2169,6 @@ document.querySelector("#userForm").addEventListener("submit", (e) => {
 
 document.querySelector("#contactForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (localStorage.getItem(MODE_KEY) === "demo") return toast("Voce esta em Dados demo. Volte para Principal para salvar cadastros reais.");
   if (e.target.dataset.saving === "true") return;
   e.target.dataset.saving = "true";
   const data = Object.fromEntries(new FormData(e.target).entries());
@@ -2254,7 +2230,7 @@ document.querySelector("#syncCloudBtn")?.addEventListener("click", () => {
   syncCloudNow(true);
 });
 
-document.querySelector("#seedBtn").addEventListener("click", async () => {
+document.querySelector("#seedBtn")?.addEventListener("click", async () => {
   await syncCloudNow(false);
   localStorage.setItem(MODE_KEY, "demo");
   const currentUsers = state.users?.length ? state.users : DEFAULT_USERS;
@@ -2271,7 +2247,7 @@ document.querySelector("#seedBtn").addEventListener("click", async () => {
   toast("Modo demonstracao carregado");
 });
 
-document.querySelector("#mainDataBtn").addEventListener("click", async () => {
+document.querySelector("#mainDataBtn")?.addEventListener("click", async () => {
   await setMode("main");
   toast("Sistema principal carregado");
 });
