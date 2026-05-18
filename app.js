@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-0945";
+const APP_VERSION = "20260518-1025";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -29,7 +29,7 @@ const views = {
   alerta: "Alerta",
   sucata: "Sucata por peso",
   venda: "Saida / Venda",
-  inventarioVendas: "Inventario de vendas",
+  inventarioVendas: "Inventario de produtos",
   relatorios: "Relatorios",
   configuracao: "Configuracao"
 };
@@ -734,9 +734,32 @@ function deletePendingItem(id) {
   rejectPendingItem(id, "Excluido diretamente no alerta");
 }
 
+function deleteStockProduct(id) {
+  if (!isAdmin()) return toast("Apenas administrador pode excluir item do estoque");
+  const item = state.items.find(product => product.id === id);
+  if (!item) return;
+  if (item.status === "excluido") return toast("Item ja esta excluido");
+  const reason = prompt(`Motivo da exclusao de ${item.code} - ${item.name || "produto"}:`);
+  if (reason === null) return;
+  const cleanReason = reason.trim();
+  if (!cleanReason) return toast("Informe o motivo da exclusao");
+  item.previousStatus = item.status;
+  item.status = "excluido";
+  item.deleteReason = cleanReason;
+  item.deletedAt = new Date().toISOString();
+  item.deletedBy = currentUsername();
+  item.quantity = 0;
+  item.weight = 0;
+  stampUpdate(item);
+  save();
+  renderAll();
+  document.querySelector("#productDialog")?.close();
+  toast("Item excluido e enviado ao inventario de produtos");
+}
+
 function metrics() {
   const items = state.items;
-  const inStock = items.filter(i => i.status !== "vendido" && i.status !== "descartado");
+  const inStock = items.filter(i => i.status !== "vendido" && i.status !== "descartado" && i.status !== "excluido");
   const totalValue = inStock.reduce((sum, i) => sum + (num(i.saleValue) || num(i.suggestedValue) || num(i.marketValue)) * (num(i.quantity) || 1), 0);
   const totalPaid = items.reduce((sum, i) => sum + num(i.paidValue), 0);
   const soldTotal = state.sales.reduce((sum, s) => sum + num(s.soldValue), 0);
@@ -874,7 +897,7 @@ function margin(value, costOrProfit) {
 
 function stockValue(items) {
   return items
-    .filter(item => item.status !== "vendido" && item.status !== "descartado")
+    .filter(item => item.status !== "vendido" && item.status !== "descartado" && item.status !== "excluido")
     .reduce((total, item) => total + (num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue)) * (num(item.quantity) || 1), 0);
 }
 
@@ -969,7 +992,7 @@ function dashboardHtml(tab = activeDashboardTab) {
   const nowMonth = monthKey(today);
   const monthSales = data.sales.filter(sale => monthKey(sale.soldAt) === nowMonth);
   const monthPurchases = data.purchases.filter(item => monthKey(item.entryDate) === nowMonth);
-  const inStock = data.items.filter(item => item.status !== "vendido" && item.status !== "descartado");
+  const inStock = data.items.filter(item => item.status !== "vendido" && item.status !== "descartado" && item.status !== "excluido");
   const soldMonth = sum(monthSales, sale => sale.soldValue);
   const boughtMonth = sum(monthPurchases, item => item.paidValue);
   const profitMonth = sum(monthSales, sale => sale.profit);
@@ -1082,7 +1105,7 @@ function renderStock() {
   const category = document.querySelector("#stockCategory")?.value || "";
   const filtered = state.items.filter(item => {
     const text = `${item.code} ${item.ean} ${item.name} ${item.brand} ${item.model} ${item.location} ${item.category}`.toLowerCase();
-    return item.status !== "vendido" && item.status !== "descartado" && (!query || text.includes(query)) && (!category || item.category === category);
+    return item.status !== "vendido" && item.status !== "descartado" && item.status !== "excluido" && (!query || text.includes(query)) && (!category || item.category === category);
   });
   document.querySelector("#stockCountLabel").textContent = `${filtered.length} itens visiveis`;
   document.querySelector("#stockGrid").innerHTML = filtered.length ? filtered.map(stockCard).join("") : `<div class="empty">Nenhum item encontrado no estoque.</div>`;
@@ -1117,7 +1140,7 @@ function renderCollaboratorPending() {
 
 function renderSaleOptions() {
   const select = document.querySelector("#saleItem");
-  const sellable = state.items.filter(i => i.status !== "vendido" && i.status !== "descartado");
+  const sellable = state.items.filter(i => i.status !== "vendido" && i.status !== "descartado" && i.status !== "excluido");
   select.innerHTML = sellable.map(i => `<option value="${i.id}">${escapeHtml(i.code)} Â· ${escapeHtml(i.name)}</option>`).join("");
   renderCustomerOptions();
   renderSaleItemPreview();
@@ -1245,39 +1268,87 @@ function renderSalesList() {
   });
 }
 
+function productInventoryRows() {
+  const productRows = state.items.map(item => ({
+    tipo: item.status === "excluido" ? "Produto excluido" : "Produto",
+    data: item.deletedAt || item.soldAt || item.entryDate || item.createdAt || "",
+    codigo: item.code,
+    ean: item.ean,
+    produto: item.name,
+    categoria: item.category,
+    cliente: item.customer || "",
+    vendedor: "",
+    medida: item.category === "Sucata" ? `${num(item.weight)} kg` : `${num(item.quantity)} un.`,
+    valor: num(item.finalSoldValue) || num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue),
+    lucro: "",
+    status: item.status || "em estoque",
+    motivo: item.deleteReason || "",
+    rastreabilidade: item.status === "excluido"
+      ? `Excluido por ${item.deletedBy || "-"} em ${item.deletedAt ? new Date(item.deletedAt).toLocaleString("pt-BR") : "-"}`
+      : auditLine(item),
+    id: item.id,
+    openType: "product"
+  }));
+  const saleRows = state.sales.map(sale => {
+    const item = state.items.find(product => product.id === sale.itemId) || {};
+    return {
+      tipo: "Venda",
+      data: sale.soldAt || sale.createdAt || "",
+      codigo: item.code || "",
+      ean: item.ean || "",
+      produto: item.name || "Produto",
+      categoria: item.category || "",
+      cliente: sale.customer || "",
+      vendedor: sale.seller || "",
+      medida: num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`,
+      valor: num(sale.soldValue),
+      lucro: num(sale.profit),
+      status: sale.status || "concluida",
+      motivo: sale.reversalReason || "",
+      rastreabilidade: auditLine(sale),
+      id: sale.id,
+      openType: "sale"
+    };
+  });
+  return [...productRows, ...saleRows].sort((a, b) => new Date(b.data || 0) - new Date(a.data || 0));
+}
+
 function renderSalesInventory() {
   const target = document.querySelector("#salesInventory");
   if (!target) return;
   const count = document.querySelector("#salesInventoryCount");
-  if (count) count.textContent = `${state.sales.length} vendas registradas`;
-  if (!state.sales.length) {
-    target.innerHTML = `<div class="empty">Nenhuma venda registrada.</div>`;
+  const rows = productInventoryRows();
+  if (count) count.textContent = `${rows.length} movimentacoes registradas`;
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty">Nenhum produto movimentado.</div>`;
     return;
   }
   target.innerHTML = `<table>
     <thead><tr>
-      <th>Data</th><th>Codigo</th><th>Produto</th><th>Cliente</th><th>Vendedor</th><th>Medida</th><th>Valor</th><th>Lucro</th><th>Status</th><th>Rastreabilidade</th>
+      <th>Tipo</th><th>Data</th><th>Codigo</th><th>Produto</th><th>Cliente</th><th>Vendedor</th><th>Medida</th><th>Valor</th><th>Lucro</th><th>Status</th><th>Motivo</th><th>Rastreabilidade</th>
     </tr></thead>
-    <tbody>${state.sales.map(sale => {
-      const item = state.items.find(product => product.id === sale.itemId) || {};
-      const measure = num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`;
-      return `<tr class="clickable-row" data-open-sale="${sale.id}">
-        <td>${escapeHtml(sale.soldAt || "-")}</td>
-        <td>${escapeHtml(item.code || "-")}</td>
-        <td>${escapeHtml(item.name || "Produto")}</td>
-        <td>${escapeHtml(sale.customer || "-")}</td>
-        <td>${escapeHtml(sale.seller || "-")}</td>
-        <td>${escapeHtml(measure)}</td>
-        <td>${money.format(num(sale.soldValue))}</td>
-        <td>${money.format(num(sale.profit))}</td>
-        <td>${escapeHtml(sale.status || "concluida")}</td>
-        <td>${escapeHtml(auditLine(sale))}</td>
+    <tbody>${rows.map(row => {
+      const openAttrs = row.openType === "sale" ? `data-open-sale="${row.id}"` : `data-open-product="${row.id}" data-product-source="stock"`;
+      return `<tr class="clickable-row" ${openAttrs}>
+        <td>${escapeHtml(row.tipo)}</td>
+        <td>${escapeHtml(row.data || "-")}</td>
+        <td>${escapeHtml(row.codigo || "-")}</td>
+        <td>${escapeHtml(row.produto || "-")}</td>
+        <td>${escapeHtml(row.cliente || "-")}</td>
+        <td>${escapeHtml(row.vendedor || "-")}</td>
+        <td>${escapeHtml(row.medida || "-")}</td>
+        <td>${money.format(num(row.valor))}</td>
+        <td>${row.lucro === "" ? "-" : money.format(num(row.lucro))}</td>
+        <td>${escapeHtml(row.status || "-")}</td>
+        <td>${escapeHtml(row.motivo || "-")}</td>
+        <td>${escapeHtml(row.rastreabilidade || "-")}</td>
       </tr>`;
     }).join("")}</tbody>
   </table>`;
   target.querySelectorAll("[data-open-sale]").forEach(row => {
     row.addEventListener("click", () => openSale(row.dataset.openSale));
   });
+  bindProductOpeners(target);
 }
 
 function saleDetails(id) {
@@ -1760,6 +1831,7 @@ function openProduct(id, source = "stock") {
   const canValidatePending = source === "pending" && isAdmin();
   document.querySelector("#approveFromDialog").style.display = canValidatePending ? "" : "none";
   document.querySelector("#rejectFromDialog").style.display = canValidatePending ? "" : "none";
+  document.querySelector("#deleteProductFromDialog").style.display = source === "stock" && isAdmin() && item.status !== "excluido" ? "" : "none";
   document.querySelector("#dialogPriceResults").innerHTML = "";
   dialog.showModal();
 }
@@ -1965,20 +2037,34 @@ document.querySelector("#eanPhoto").addEventListener("change", async (e) => {
 
 document.querySelector("#itemForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (e.target.dataset.saving === "true") return;
+  e.target.dataset.saving = "true";
+  const submitButton = e.target.querySelector("button[type='submit']");
+  const originalButtonText = submitButton.textContent;
+  submitButton.disabled = true;
+  submitButton.textContent = isAdmin() ? "Salvando..." : "Enviando...";
   const preview = document.querySelector("#photoPreview");
-  const photo = await fileToDataURL(e.target.photo.files[0]) || (preview.style.display === "block" ? preview.src : "");
-  const item = buildItem(e.target, photo);
-  item.purchaseInvoiceFileName = e.target.purchaseInvoiceFile.files[0]?.name || "";
-  item.purchaseInvoiceFile = await fileToDataURL(e.target.purchaseInvoiceFile.files[0]);
-  submitInventoryItem(item);
-  renderAll();
-  await syncCloudNow(false);
-  e.target.reset();
-  document.querySelector("input[name='entryDate']").value = today;
-  preview.style.display = "none";
-  document.querySelector("#aiResult").innerHTML = "";
-  document.querySelector("#priceResults").innerHTML = "";
-  document.querySelector("#priceQuery").value = "";
+  try {
+    const photo = await fileToDataURL(e.target.photo.files[0]) || (preview.style.display === "block" ? preview.src : "");
+    const item = buildItem(e.target, photo);
+    item.purchaseInvoiceFileName = e.target.purchaseInvoiceFile.files[0]?.name || "";
+    item.purchaseInvoiceFile = await fileToDataURL(e.target.purchaseInvoiceFile.files[0]);
+    submitInventoryItem(item);
+    e.target.reset();
+    document.querySelector("input[name='entryDate']").value = today;
+    preview.removeAttribute("src");
+    preview.style.display = "none";
+    document.querySelector("#aiResult").innerHTML = "";
+    document.querySelector("#priceResults").innerHTML = "";
+    document.querySelector("#priceQuery").value = "";
+    document.querySelector("#eanReaderStatus").textContent = "Use a camera para ler codigo de barras.";
+    renderAll();
+    await syncCloudNow(false);
+  } finally {
+    e.target.dataset.saving = "";
+    submitButton.disabled = false;
+    submitButton.textContent = originalButtonText;
+  }
 });
 
 document.querySelector("#marketBtn").addEventListener("click", async () => {
@@ -2454,7 +2540,7 @@ document.querySelector("#mainDataBtn")?.addEventListener("click", async () => {
 });
 
 document.querySelector("#exportStockBtn").addEventListener("click", () => {
-  exportTable("estoque-uniglobal.xls", state.items.filter(item => item.status !== "vendido" && item.status !== "descartado").map(item => ({
+  exportTable("estoque-uniglobal.xls", state.items.filter(item => item.status !== "vendido" && item.status !== "descartado" && item.status !== "excluido").map(item => ({
     codigo: item.code,
     ean: item.ean,
     nome: item.name,
@@ -2499,6 +2585,29 @@ document.querySelector("#exportSalesBtn").addEventListener("click", () => {
   }));
 });
 
+document.querySelector("#exportProductsInventory")?.addEventListener("click", () => {
+  exportTable("inventario-produtos-uniglobal.xls", productInventoryRows().map(row => ({
+    tipo: row.tipo,
+    data: row.data,
+    codigo: row.codigo,
+    ean: row.ean,
+    produto: row.produto,
+    categoria: row.categoria,
+    cliente: row.cliente,
+    vendedor: row.vendedor,
+    medida: row.medida,
+    valor: row.valor,
+    lucro: row.lucro,
+    status: row.status,
+    motivo: row.motivo,
+    rastreabilidade: row.rastreabilidade
+  })));
+});
+
+document.querySelector("#printProductsInventory")?.addEventListener("click", () => {
+  window.print();
+});
+
 document.querySelector("#productEditForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const item = saveActiveProduct();
@@ -2527,6 +2636,12 @@ document.querySelector("#rejectFromDialog").addEventListener("click", async () =
   if (reason === null) return;
   document.querySelector("#productDialog").close();
   rejectPendingItem(item.id, reason.trim() || "Rejeitado pelo administrador");
+  await syncCloudNow(false);
+});
+
+document.querySelector("#deleteProductFromDialog").addEventListener("click", async () => {
+  if (!activeProduct || activeProduct.source !== "stock") return;
+  deleteStockProduct(activeProduct.id);
   await syncCloudNow(false);
 });
 

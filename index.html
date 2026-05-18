@@ -37,7 +37,7 @@
         <button data-view="alerta" data-admin-only="true">Alerta</button>
         <button data-view="sucata">Sucata por peso</button>
         <button data-view="venda">Saida / Venda</button>
-        <button data-view="inventarioVendas">Inventario de vendas</button>
+        <button data-view="inventarioVendas">Inventario de produtos</button>
         <button data-view="relatorios">Relatorios</button>
         <button data-view="configuracao" data-admin-only="true">Configuração</button>
       </nav>
@@ -371,8 +371,12 @@
       <section id="inventarioVendas" class="view">
         <div class="panel">
           <div class="panel-head">
-            <h2>Inventario de vendas</h2>
+            <h2>Inventario de produtos</h2>
             <span id="salesInventoryCount"></span>
+          </div>
+          <div class="actions inline-actions">
+            <button type="button" id="printProductsInventory" class="secondary-btn">Imprimir PDF</button>
+            <button type="button" id="exportProductsInventory" class="secondary-btn">Gerar Excel</button>
           </div>
           <div id="salesInventory" class="data-table"></div>
         </div>
@@ -501,6 +505,7 @@
           <button type="button" id="dialogMarketBtn" class="secondary-btn">Pesquisar preço</button>
           <button type="button" id="approveFromDialog" class="secondary-btn">Inserir no estoque</button>
           <button type="button" id="rejectFromDialog" class="danger-btn">Rejeitar produto</button>
+          <button type="button" id="deleteProductFromDialog" class="danger-btn">Excluir item</button>
           <button type="submit" class="primary-btn">Salvar alteracoes</button>
         </div>
         <div id="dialogPriceResults" class="price-results"></div>
@@ -608,6 +613,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260518-0945"></script>
+    <script src="app.js?v=20260518-1025"></script>
   </body>
 </html>
