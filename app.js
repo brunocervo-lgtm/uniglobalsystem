@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1210";
+const APP_VERSION = "20260520-1230";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -1336,13 +1336,35 @@ function addCurrentItemToSaleCart() {
   saleCart.push(line);
   renderSaleCart();
   updateCashbackBalanceInfo();
+  resetSaleLineFields();
+  toast(`${line.code} adicionado a venda`);
+}
+
+function resetSaleLineFields() {
   const form = document.querySelector("#saleForm");
+  if (!form) return;
   form.soldMeasure.value = "";
+  form.unitSaleValue.value = "";
   form.soldValue.value = "";
   form.unitSaleValue.dataset.saleUnitMode = "auto";
-  syncSaleUnitValue(true);
-  updateSalePreview();
-  toast(`${line.code} adicionado a venda`);
+  document.querySelector("#salePreview").innerHTML = "";
+  renderSaleItemPreview();
+  updateSaleMeasureUI();
+}
+
+function clearSaleForm() {
+  const form = document.querySelector("#saleForm");
+  if (!form) return;
+  saleCart = [];
+  form.reset();
+  form.unitSaleValue.dataset.saleUnitMode = "auto";
+  form.soldAt.value = today;
+  renderSaleOptions();
+  renderSaleCart();
+  document.querySelector("#salePreview").innerHTML = "";
+  updateCashbackBalanceInfo();
+  form.itemId?.focus();
+  toast("Venda limpa. Pronto para iniciar outra.");
 }
 
 function renderCustomerOptions() {
@@ -2475,6 +2497,7 @@ document.querySelector("input[name='cashbackUsed']").addEventListener("input", (
   updateSalePreview();
 });
 document.querySelector("#addSaleItemBtn")?.addEventListener("click", addCurrentItemToSaleCart);
+document.querySelector("#clearSaleBtn")?.addEventListener("click", clearSaleForm);
 document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (e.target.dataset.saving === "true") return;
@@ -2487,13 +2510,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   }
   try {
   const data = Object.fromEntries(new FormData(e.target).entries());
-  if (!saleCart.length) {
-    const line = currentSaleLineFromForm();
-    if (!line) return toast("Nenhum item selecionado");
-    if (line.error) return toast(line.error);
-    saleCart.push(line);
-    renderSaleCart();
-  }
+  if (!saleCart.length) return toast("Adicione pelo menos um item a venda antes de finalizar");
   const registeredCustomer = findRegisteredCustomer(data.customer);
   if (!registeredCustomer) return toast("Venda bloqueada: cliente precisa estar cadastrado");
   const soldTotal = sum(saleCart, line => line.soldValue);
