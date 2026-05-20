@@ -618,6 +618,12 @@ textarea { resize: vertical; }
   color: var(--muted);
   font-weight: 700;
 }
+.sale-cart {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
 .compact-info {
   align-self: end;
   min-height: 43px;

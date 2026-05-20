@@ -357,7 +357,11 @@
               <label class="wide">Observações da nota <textarea name="invoiceNotes" rows="3"></textarea></label>
             </div>
             <div id="salePreview" class="calculation"></div>
-            <div class="actions"><button class="primary-btn">Registrar saída</button></div>
+            <div id="saleCart" class="sale-cart"></div>
+            <div class="actions">
+              <button type="button" id="addSaleItemBtn" class="secondary-btn">Adicionar item a venda</button>
+              <button class="primary-btn">Finalizar venda</button>
+            </div>
           </form>
           <section class="panel">
             <div class="panel-head">
@@ -625,6 +629,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260518-1045"></script>
+    <script src="app.js?v=20260520-1115"></script>
   </body>
 </html>

@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260518-1045";
+const APP_VERSION = "20260520-1115";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -47,6 +47,7 @@ let activeReportTab = "principal";
 let editingSaleId = "";
 let cloudSaveTimer = null;
 let cloudLastError = "";
+let saleCart = [];
 
 function activeKey() {
   return DB_KEY;
@@ -834,7 +835,24 @@ function parseDate(value) {
 }
 
 function saleProduct(sale) {
-  return state.items.find(item => item.id === sale.itemId) || {};
+  const first = sale.items?.[0];
+  return state.items.find(item => item.id === (first?.itemId || sale.itemId)) || {};
+}
+
+function saleLineItems(sale) {
+  if (Array.isArray(sale.items) && sale.items.length) return sale.items;
+  return [{
+    itemId: sale.itemId,
+    code: saleProduct(sale).code,
+    name: saleProduct(sale).name,
+    category: saleProduct(sale).category,
+    soldWeight: num(sale.soldWeight),
+    soldQuantity: num(sale.soldQuantity),
+    unitSaleValue: (num(sale.soldWeight) || num(sale.soldQuantity)) ? num(sale.soldValue) / (num(sale.soldWeight) || num(sale.soldQuantity)) : num(sale.soldValue),
+    soldValue: num(sale.soldValue),
+    cost: saleCost(sale),
+    profit: num(sale.profit)
+  }];
 }
 
 function activeSales() {
@@ -888,6 +906,7 @@ function sum(list, pick) {
 }
 
 function saleCost(sale) {
+  if (Array.isArray(sale.items) && sale.items.length) return sum(sale.items, line => line.cost);
   return Math.max(0, num(sale.soldValue) - num(sale.profit));
 }
 
@@ -1169,6 +1188,92 @@ function renderSaleItemPreview() {
   bindProductOpeners(target);
 }
 
+function currentSaleLineFromForm() {
+  const form = document.querySelector("#saleForm");
+  const item = state.items.find(product => product.id === form.itemId.value);
+  if (!item) return null;
+  const isScrap = item.category === "Sucata";
+  const soldMeasure = num(form.soldMeasure.value);
+  const soldWeight = isScrap ? soldMeasure : 0;
+  const soldQuantity = isScrap ? 0 : (soldMeasure || 1);
+  if (isScrap && soldWeight <= 0) return { error: "Informe quantos kg de sucata foram vendidos" };
+  if (!isScrap && soldQuantity <= 0) return { error: "Informe a quantidade vendida" };
+  const alreadyInCart = sum(saleCart.filter(line => line.itemId === item.id), line => line.soldWeight || line.soldQuantity);
+  const requested = isScrap ? soldWeight : soldQuantity;
+  const available = isScrap ? num(item.weight) : num(item.quantity);
+  if (requested + alreadyInCart > available) return { error: isScrap ? "Kg vendido maior que o peso em estoque" : "Quantidade vendida maior que o estoque" };
+  const cost = isScrap && num(item.weight)
+    ? num(item.paidValue) * (soldWeight / num(item.weight))
+    : num(item.paidValue) * (soldQuantity / Math.max(num(item.quantity), 1));
+  const soldValue = num(form.soldValue.value);
+  if (soldValue <= 0) return { error: "Informe o valor vendido deste item" };
+  return {
+    id: crypto.randomUUID(),
+    itemId: item.id,
+    code: item.code,
+    name: item.name,
+    category: item.category,
+    soldWeight,
+    soldQuantity,
+    unitSaleValue: num(form.unitSaleValue.value) || (requested ? soldValue / requested : soldValue),
+    soldValue,
+    cost,
+    profit: soldValue - cost
+  };
+}
+
+function renderSaleCart() {
+  const target = document.querySelector("#saleCart");
+  const form = document.querySelector("#saleForm");
+  if (!target || !form) return;
+  if (!saleCart.length) {
+    target.innerHTML = `<div class="empty">Nenhum item adicionado nesta venda.</div>`;
+    return;
+  }
+  const total = sum(saleCart, line => line.soldValue);
+  const cost = sum(saleCart, line => line.cost);
+  const profit = sum(saleCart, line => line.profit);
+  target.innerHTML = `<div class="data-table"><table>
+    <thead><tr><th>Produto</th><th>Medida</th><th>Unitario</th><th>Total</th><th>Lucro</th><th></th></tr></thead>
+    <tbody>${saleCart.map(line => `<tr>
+      <td>${escapeHtml(line.code)} - ${escapeHtml(line.name || "Produto")}</td>
+      <td>${line.soldWeight ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity)} un.`}</td>
+      <td>${money.format(num(line.unitSaleValue))}</td>
+      <td>${money.format(num(line.soldValue))}</td>
+      <td>${money.format(num(line.profit))}</td>
+      <td><button type="button" class="danger-btn small-btn" data-remove-sale-line="${line.id}">Remover</button></td>
+    </tr>`).join("")}</tbody>
+  </table></div>
+  <div class="sale-summary">
+    <div><span>Total da venda</span><strong>${money.format(total)}</strong></div>
+    <div><span>Custo total</span><strong>${money.format(cost)}</strong></div>
+    <div><span>Lucro total</span><strong>${money.format(profit)}</strong></div>
+  </div>`;
+  target.querySelectorAll("[data-remove-sale-line]").forEach(button => {
+    button.addEventListener("click", () => {
+      saleCart = saleCart.filter(line => line.id !== button.dataset.removeSaleLine);
+      renderSaleCart();
+      updateCashbackBalanceInfo();
+    });
+  });
+}
+
+function addCurrentItemToSaleCart() {
+  const line = currentSaleLineFromForm();
+  if (!line) return toast("Nenhum item selecionado");
+  if (line.error) return toast(line.error);
+  saleCart.push(line);
+  renderSaleCart();
+  updateCashbackBalanceInfo();
+  const form = document.querySelector("#saleForm");
+  form.soldMeasure.value = "";
+  form.soldValue.value = "";
+  form.unitSaleValue.dataset.saleUnitMode = "auto";
+  syncSaleUnitValue(true);
+  updateSalePreview();
+  toast(`${line.code} adicionado a venda`);
+}
+
 function renderCustomerOptions() {
   const list = document.querySelector("#customerOptions");
   if (!list) return;
@@ -1229,7 +1334,8 @@ function renderSalesList() {
   list.innerHTML = state.sales.length ? state.sales.map(sale => {
     const item = state.items.find(product => product.id === sale.itemId) || {};
     const invoice = state.invoices.find(note => note.saleId === sale.id);
-    const measure = num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`;
+    const lines = saleLineItems(sale);
+    const measure = lines.length > 1 ? `${lines.length} itens` : (num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`);
     const closed = sale.status === "cancelada" || sale.status === "estornada";
     return `<article class="calc-card clickable-row" data-open-sale="${sale.id}">
       <strong>${escapeHtml(item.code || "Venda")} · ${escapeHtml(item.name || "Produto")}</strong>
@@ -1289,26 +1395,25 @@ function productInventoryRows() {
     id: item.id,
     openType: "product"
   }));
-  const saleRows = state.sales.map(sale => {
-    const item = state.items.find(product => product.id === sale.itemId) || {};
-    return {
+  const saleRows = state.sales.flatMap(sale => {
+    return saleLineItems(sale).map(line => ({
       tipo: "Venda",
       data: sale.soldAt || sale.createdAt || "",
-      codigo: item.code || "",
-      ean: item.ean || "",
-      produto: item.name || "Produto",
-      categoria: item.category || "",
+      codigo: line.code || saleProduct(sale).code || "",
+      ean: state.items.find(product => product.id === line.itemId)?.ean || "",
+      produto: line.name || "Produto",
+      categoria: line.category || "",
       cliente: sale.customer || "",
       vendedor: sale.seller || "",
-      medida: num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`,
-      valor: num(sale.soldValue),
-      lucro: num(sale.profit),
+      medida: num(line.soldWeight) ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity) || 1} un.`,
+      valor: num(line.soldValue),
+      lucro: num(line.profit),
       status: sale.status || "concluida",
       motivo: sale.reversalReason || "",
       rastreabilidade: auditLine(sale),
       id: sale.id,
       openType: "sale"
-    };
+    }));
   });
   return [...productRows, ...saleRows].sort((a, b) => new Date(b.data || 0) - new Date(a.data || 0));
 }
@@ -1356,7 +1461,8 @@ function saleDetails(id) {
   if (!sale) return null;
   const item = state.items.find(product => product.id === sale.itemId) || {};
   const invoice = state.invoices.find(note => note.saleId === sale.id);
-  const measure = num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`;
+  const lines = saleLineItems(sale);
+  const measure = lines.length > 1 ? `${lines.length} itens` : (num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`);
   return { sale, item, invoice, measure };
 }
 
@@ -1365,10 +1471,13 @@ function openSale(id) {
   if (!details) return;
   activeSaleId = id;
   const { sale, item, invoice, measure } = details;
-  document.querySelector("#saleDialogTitle").textContent = `${item.code || "Venda"} · ${item.name || "Produto"}`;
+  const lines = saleLineItems(sale);
+  const itemsText = lines.map(line => `${line.code || ""} - ${line.name || "Produto"} (${line.soldWeight ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity) || 1} un.`}) - ${money.format(num(line.soldValue))}`).join("\n");
+  document.querySelector("#saleDialogTitle").textContent = `${item.code || "Venda"} - ${lines.length > 1 ? `Venda com ${lines.length} itens` : item.name || "Produto"}`;
   document.querySelector("#saleDialogBody").innerHTML = [
     ["Status", sale.status || "concluida"],
-    ["Produto", item.name],
+    ["Produto", lines.length > 1 ? `${lines.length} itens na venda` : item.name],
+    ["Itens", itemsText],
     ["Codigo", item.code],
     ["EAN", item.ean],
     ["Cliente", sale.customer],
@@ -1402,6 +1511,8 @@ function printSale(id) {
   const details = saleDetails(id);
   if (!details) return;
   const { sale, item, invoice, measure } = details;
+  const lines = saleLineItems(sale);
+  const linesHtml = lines.map(line => `<tr><td>${escapeHtml(line.code || "")}</td><td>${escapeHtml(line.name || "Produto")}</td><td>${line.soldWeight ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity) || 1} un.`}</td><td>${money.format(num(line.soldValue))}</td></tr>`).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Venda ${item.code || ""}</title>
     <style>body{font-family:Arial,sans-serif;padding:28px;color:#111}h1{margin:0 0 6px}table{width:100%;border-collapse:collapse;margin-top:20px}td,th{border:1px solid #ddd;padding:10px;text-align:left}.brand{color:#b88723;font-weight:700}.status{font-weight:700}</style>
     </head><body>
@@ -1414,6 +1525,7 @@ function printSale(id) {
       <tr><th>Cliente</th><td>${escapeHtml(sale.customer || "-")}</td></tr>
       <tr><th>Data</th><td>${escapeHtml(sale.soldAt || "-")}</td></tr>
       <tr><th>Medida vendida</th><td>${escapeHtml(measure)}</td></tr>
+      <tr><th>Itens</th><td><table><thead><tr><th>Codigo</th><th>Produto</th><th>Medida</th><th>Valor</th></tr></thead><tbody>${linesHtml}</tbody></table></td></tr>
       <tr><th>Valor vendido</th><td>${money.format(num(sale.soldValue))}</td></tr>
       <tr><th>Lucro</th><td>${money.format(num(sale.profit))}</td></tr>
       <tr><th>Pagamento</th><td>${escapeHtml(sale.payment || "-")}</td></tr>
@@ -1433,18 +1545,19 @@ function reverseSale(id, status) {
   if (!sale || sale.status === "cancelada" || sale.status === "estornada") return;
   const reason = prompt(status === "cancelada" ? "Motivo do cancelamento:" : "Motivo do estorno:");
   if (reason === null) return;
-  const product = state.items.find(item => item.id === sale.itemId);
-  if (product) {
-    if (num(sale.soldWeight)) {
-      product.weight = num(product.weight) + num(sale.soldWeight);
+  saleLineItems(sale).forEach(line => {
+    const product = state.items.find(item => item.id === line.itemId);
+    if (!product) return;
+    if (num(line.soldWeight)) {
+      product.weight = num(product.weight) + num(line.soldWeight);
       product.quantity = 1;
-      product.paidValue = num(product.paidValue) + (num(sale.soldValue) - num(sale.profit));
+      product.paidValue = num(product.paidValue) + num(line.cost);
     } else {
-      product.quantity = num(product.quantity) + (num(sale.soldQuantity) || 1);
+      product.quantity = num(product.quantity) + (num(line.soldQuantity) || 1);
     }
     if (product.status === "vendido") product.status = "em estoque";
     stampUpdate(product);
-  }
+  });
   sale.status = status;
   sale.reversalReason = reason.trim() || "sem motivo informado";
   sale.reversedAt = new Date().toISOString();
@@ -1465,6 +1578,7 @@ function editSale(id) {
   const sale = state.sales.find(item => item.id === id);
   if (!sale) return;
   if (sale.status === "cancelada" || sale.status === "estornada") return toast("Venda cancelada/estornada nao pode ser editada");
+  if (saleLineItems(sale).length > 1) return toast("Venda com varios itens: cancele/estorne e registre novamente para alterar itens");
   const form = document.querySelector("#saleEditForm");
   const item = state.items.find(product => product.id === sale.itemId) || {};
   editingSaleId = id;
@@ -1694,7 +1808,8 @@ function updateCashbackBalanceInfo() {
   const balance = getSellerCashbackBalance(account);
   const form = document.querySelector("#saleForm");
   const used = num(form.cashbackUsed.value);
-  const remainingPayment = Math.max(0, num(form.soldValue.value) - used);
+  const cartTotal = saleCart.length ? sum(saleCart, line => line.soldValue) : num(form.soldValue.value);
+  const remainingPayment = Math.max(0, cartTotal - used);
   if (!account) {
     info.innerHTML = "Selecione um vendedor/cliente para ver saldo de cashback.";
     return;
@@ -1769,6 +1884,7 @@ function render() {
   renderPending();
   renderCollaboratorPending();
   renderSaleOptions();
+  renderSaleCart();
   renderInvoiceOptions();
   renderInvoices();
   renderSalesList();
@@ -2173,77 +2289,46 @@ document.querySelector("input[name='cashbackUsed']").addEventListener("input", (
   updateCashbackBalanceInfo();
   updateSalePreview();
 });
+document.querySelector("#addSaleItemBtn")?.addEventListener("click", addCurrentItemToSaleCart);
 document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target).entries());
-  const item = state.items.find(i => i.id === data.itemId);
-  if (!item) return toast("Nenhum item selecionado");
+  if (!saleCart.length) {
+    const line = currentSaleLineFromForm();
+    if (!line) return toast("Nenhum item selecionado");
+    if (line.error) return toast(line.error);
+    saleCart.push(line);
+    renderSaleCart();
+  }
   const registeredCustomer = findRegisteredCustomer(data.customer);
   if (!registeredCustomer) return toast("Venda bloqueada: cliente precisa estar cadastrado");
-  const isScrap = item.category === "Sucata";
-  const soldMeasure = num(data.soldMeasure);
-  const soldWeight = isScrap ? soldMeasure : 0;
-  const soldQuantity = isScrap ? 0 : (soldMeasure || 1);
-  if (isScrap && soldWeight <= 0) return toast("Informe quantos kg de sucata foram vendidos");
-  if (isScrap && soldWeight > num(item.weight)) return toast("Kg vendido maior que o peso em estoque");
-  if (!isScrap && soldQuantity > num(item.quantity)) return toast("Quantidade vendida maior que o estoque");
+  const soldTotal = sum(saleCart, line => line.soldValue);
+  const profitTotal = sum(saleCart, line => line.profit);
+  const soldWeightTotal = sum(saleCart, line => line.soldWeight);
+  const soldQuantityTotal = sum(saleCart, line => line.soldQuantity);
   const cashbackAccount = registeredCustomer.type === "Vendedor" ? registeredCustomer.name : data.seller;
   const cashbackUsed = num(data.cashbackUsed);
   const sellerBalance = getSellerCashbackBalance(cashbackAccount);
   if (cashbackUsed > 0 && cashbackUsed > sellerBalance) return toast("Cashback usado maior que o saldo do vendedor");
-  if (cashbackUsed > 0 && cashbackUsed < num(data.soldValue) && !String(data.payment || "").trim()) {
+  if (cashbackUsed > 0 && cashbackUsed < soldTotal && !String(data.payment || "").trim()) {
     return toast("Informe como sera pago o saldo restante da venda");
   }
-  if (cashbackUsed > 0 && cashbackUsed >= num(data.soldValue) && !String(data.payment || "").trim()) {
+  if (cashbackUsed > 0 && cashbackUsed >= soldTotal && !String(data.payment || "").trim()) {
     data.payment = "Cashback";
   }
   const generatesCashback = !(registeredCustomer.type === "Vendedor" && cashbackUsed > 0);
-  const cashbackValue = generatesCashback ? num(data.soldValue) * (num(data.cashbackPercent) / 100) : 0;
-  const costBase = isScrap && num(item.weight)
-    ? num(item.paidValue) * (soldWeight / num(item.weight))
-    : num(item.paidValue) * (soldQuantity / Math.max(num(item.quantity), 1));
-  if (editingSaleId) {
-    const sale = state.sales.find(entry => entry.id === editingSaleId);
-    if (!sale) return;
-    Object.assign(sale, data, {
-      soldWeight,
-      soldQuantity: isScrap ? 0 : soldQuantity,
-      soldValue: num(data.soldValue),
-      profit: num(data.soldValue) - costBase,
-      cashbackPercent: num(data.cashbackPercent),
-      cashbackValue,
-      cashbackUsed,
-      cashbackAccount,
-      cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback",
-      updatedAt: new Date().toISOString(),
-      updatedBy: currentUsername()
-    });
-    const invoice = state.invoices.find(note => note.saleId === sale.id);
-    if (invoice) {
-      invoice.number = data.invoiceNumber || invoice.number;
-      invoice.document = data.invoiceDocument || invoice.document;
-      invoice.value = sale.soldValue;
-      invoice.status = data.invoiceStatus;
-      invoice.notes = data.invoiceNotes;
-    }
-    editingSaleId = "";
-    e.target.querySelector("button[type='submit']").textContent = "Registrar saída";
-    save();
-    await syncCloudNow(false);
-    e.target.reset();
-    document.querySelector("input[name='soldAt']").value = today;
-    updateSaleMeasureUI();
-    toast("Venda atualizada");
-    return;
-  }
+  const cashbackValue = generatesCashback ? soldTotal * (num(data.cashbackPercent) / 100) : 0;
+  if (editingSaleId) return toast("Use a janela de edicao da venda para alterar registros existentes");
   const sale = {
     id: crypto.randomUUID(),
     ...data,
+    itemId: saleCart[0]?.itemId,
+    items: saleCart.map(line => ({ ...line })),
     status: "concluida",
-    soldWeight,
-    soldQuantity: isScrap ? 0 : soldQuantity,
-    soldValue: num(data.soldValue),
-    profit: num(data.soldValue) - costBase,
+    soldWeight: soldWeightTotal,
+    soldQuantity: soldQuantityTotal,
+    soldValue: soldTotal,
+    profit: profitTotal,
     cashbackPercent: num(data.cashbackPercent),
     cashbackValue,
     cashbackUsed,
@@ -2252,19 +2337,23 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   };
   stampCreate(sale);
   state.sales.unshift(sale);
-  if (isScrap) {
-    item.weight = Math.max(0, num(item.weight) - soldWeight);
-    item.quantity = item.weight > 0 ? 1 : 0;
-    item.paidValue = Math.max(0, num(item.paidValue) - costBase);
-  } else {
-    item.quantity = Math.max(0, num(item.quantity) - soldQuantity);
-  }
-  if (num(item.quantity) <= 0 || (isScrap && num(item.weight) <= 0)) item.status = "vendido";
-  item.soldAt = data.soldAt;
-  item.finalSoldValue = sale.soldValue;
-  item.customer = data.customer;
-  item.channel = data.channel;
-  stampUpdate(item);
+  saleCart.forEach(line => {
+    const item = state.items.find(product => product.id === line.itemId);
+    if (!item) return;
+    if (line.soldWeight) {
+      item.weight = Math.max(0, num(item.weight) - num(line.soldWeight));
+      item.quantity = item.weight > 0 ? 1 : 0;
+      item.paidValue = Math.max(0, num(item.paidValue) - num(line.cost));
+    } else {
+      item.quantity = Math.max(0, num(item.quantity) - num(line.soldQuantity));
+    }
+    if (num(item.quantity) <= 0 || (item.category === "Sucata" && num(item.weight) <= 0)) item.status = "vendido";
+    item.soldAt = data.soldAt;
+    item.finalSoldValue = num(item.finalSoldValue) + num(line.soldValue);
+    item.customer = data.customer;
+    item.channel = data.channel;
+    stampUpdate(item);
+  });
   if (data.invoiceEnabled === "sim") {
     state.invoices.unshift(stampCreate({
       id: crypto.randomUUID(),
@@ -2279,10 +2368,12 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   }
   save();
   await syncCloudNow(false);
+  saleCart = [];
   e.target.reset();
   e.target.unitSaleValue.dataset.saleUnitMode = "auto";
   document.querySelector("input[name='soldAt']").value = today;
   updateSaleMeasureUI();
+  renderSaleCart();
   updateCashbackBalanceInfo();
   toast(`Venda registrada: lucro ${money.format(sale.profit)}`);
 });
