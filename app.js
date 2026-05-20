@@ -1,4 +1,4 @@
-const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+﻿const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const today = new Date().toISOString().slice(0, 10);
 const DB_KEY = "uniglobal-stock-ai-v1";
 const AUTH_KEY = "uniglobal-stock-ai-user";
@@ -6,8 +6,8 @@ const OPENAI_KEY = "uniglobal-stock-ai-openai-key";
 const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
-const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1115";
+const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "cloudUpdatedAt"];
+const APP_VERSION = "20260520-1210";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -15,7 +15,7 @@ const DEFAULT_USERS = [
 ];
 
 if (new URLSearchParams(location.search).get("reset") === "all") {
-  const blank = { items: [], pendingItems: [], sales: [], invoices: [], contacts: [], users: DEFAULT_USERS, sequence: 1 };
+  const blank = { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users: DEFAULT_USERS, sequence: 1 };
   localStorage.setItem(DB_KEY, JSON.stringify(blank));
   sessionStorage.removeItem(AUTH_KEY);
 }
@@ -29,12 +29,13 @@ const views = {
   alerta: "Alerta",
   sucata: "Sucata por peso",
   venda: "Saida / Venda",
+  contasReceber: "Contas a receber",
   inventarioVendas: "Inventario de produtos",
   relatorios: "Relatorios",
   configuracao: "Configuracao"
 };
 
-const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "venda", "inventarioVendas", "relatorios", "configuracao"];
+const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "venda", "contasReceber", "inventarioVendas", "relatorios", "configuracao"];
 const collaboratorViews = ["cadastro"];
 const state = migrate(load());
 let activeProduct = null;
@@ -54,7 +55,7 @@ function activeKey() {
 }
 
 function blankState(users = DEFAULT_USERS) {
-  return { items: [], pendingItems: [], sales: [], invoices: [], contacts: [], users, sequence: 1 };
+  return { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users, sequence: 1 };
 }
 
 function load() {
@@ -67,6 +68,7 @@ function migrate(data) {
   data.pendingItems ||= [];
   data.sales ||= [];
   data.invoices ||= [];
+  data.receivables ||= [];
   data.contacts ||= [];
   data.sequence ||= 1;
   data.cloudUpdatedAt ||= "";
@@ -75,6 +77,7 @@ function migrate(data) {
   data.pendingItems.forEach(item => stampCreate(item));
   data.sales.forEach(sale => stampCreate(sale));
   data.invoices.forEach(invoice => stampCreate(invoice));
+  data.receivables.forEach(receivable => stampCreate(receivable));
   data.contacts.forEach(contact => stampCreate(contact));
   data.users.forEach(user => stampCreate(user));
   return data;
@@ -118,7 +121,7 @@ function applyCloudState(data) {
 }
 
 function stateHasBusinessData(data = state) {
-  return ["items", "pendingItems", "sales", "invoices", "contacts"].some(key => Array.isArray(data[key]) && data[key].length);
+  return ["items", "pendingItems", "sales", "invoices", "receivables", "contacts"].some(key => Array.isArray(data[key]) && data[key].length);
 }
 
 function stateTime(data = {}) {
@@ -223,7 +226,7 @@ function updateCloudStatus(message) {
 }
 
 function cloudStateSummary(data = state) {
-  return `${data.items.length} produtos, ${data.pendingItems.length} pendentes, ${data.contacts.length} cadastros, ${data.sales.length} vendas`;
+  return `${data.items.length} produtos, ${data.pendingItems.length} pendentes, ${data.contacts.length} cadastros, ${data.sales.length} vendas, ${data.receivables?.length || 0} contas`;
 }
 
 async function syncCloudNow(showToast = true) {
@@ -401,7 +404,7 @@ async function readBarcodeFromImage(file) {
   try { code = await readBarcodeWithNativeDetector(file); } catch {}
   if (!code) {
     try { code = await readBarcodeWithHtml5QrCode(file); } catch (error) {
-      throw new Error(`${error.message} Digite o EAN manualmente ou tente uma foto mais nítida do codigo.`);
+      throw new Error(`${error.message} Digite o EAN manualmente ou tente uma foto mais nÃ­tida do codigo.`);
     }
   }
   if (!code) throw new Error("Nao encontrei codigo de barras na foto. Tente aproximar, focar melhor e deixar o EAN inteiro visivel.");
@@ -431,7 +434,7 @@ async function fetchMercadoLivrePrices(query) {
       price: Number(item.price),
       link: item.permalink
     }));
-  if (!results.length) throw new Error("Nenhum preço encontrado no Mercado Livre");
+  if (!results.length) throw new Error("Nenhum preÃ§o encontrado no Mercado Livre");
   const prices = results.map(item => item.price).sort((a, b) => a - b);
   const average = prices.reduce((sum, price) => sum + price, 0) / prices.length;
   return {
@@ -497,7 +500,7 @@ function inferItemFromPhotoName(fileName = "produto usado") {
     ? "Sucata"
     : lower.includes("novo")
       ? "Produto de revenda"
-      : "Peça usada";
+      : "PeÃ§a usada";
   let subcategory = "";
   if (lower.includes("motor")) subcategory = "Motor";
   if (lower.includes("placa") || lower.includes("eletr")) subcategory = "Eletronico";
@@ -558,7 +561,7 @@ async function identifyProductWithOpenAiKey(dataUrl, apiKey) {
         content: [
           {
             type: "input_text",
-            text: "Identifique o produto da foto para cadastro de estoque. Responda apenas JSON valido com: name, category, subcategory, brand, model, condition, confidence, notes. Categorias permitidas: Sucata, Peça usada, Produto de revenda. Se marca/modelo nao estiverem visiveis, deixe vazio. Use portugues do Brasil."
+            text: "Identifique o produto da foto para cadastro de estoque. Responda apenas JSON valido com: name, category, subcategory, brand, model, condition, confidence, notes. Categorias permitidas: Sucata, PeÃ§a usada, Produto de revenda. Se marca/modelo nao estiverem visiveis, deixe vazio. Use portugues do Brasil."
           },
           { type: "input_image", image_url: dataUrl, detail: "low" }
         ]
@@ -572,7 +575,7 @@ async function identifyProductWithOpenAiKey(dataUrl, apiKey) {
             additionalProperties: false,
             properties: {
               name: { type: "string" },
-              category: { type: "string", enum: ["Sucata", "Peça usada", "Produto de revenda"] },
+              category: { type: "string", enum: ["Sucata", "PeÃ§a usada", "Produto de revenda"] },
               subcategory: { type: "string" },
               brand: { type: "string" },
               model: { type: "string" },
@@ -613,11 +616,11 @@ function applyAiSuggestionToForm(suggestion) {
 }
 
 async function renderPriceResult(target, query) {
-  target.innerHTML = `<div class="result-card"><strong>Pesquisando preço...</strong><p>Montando comparativo por plataforma.</p></div>`;
+  target.innerHTML = `<div class="result-card"><strong>Pesquisando preÃ§o...</strong><p>Montando comparativo por plataforma.</p></div>`;
   const rows = await getMarketplaceBreakdown(query);
   const prices = rows.find(row => row.name === "Mercado Livre" && row.source === "Consulta real") || rows[0];
   const refs = rows[0].references?.length
-    ? `<div class="reference-list">${rows[0].references.map(item => `<a href="${item.link}" target="_blank" rel="noreferrer">${escapeHtml(item.title)} · ${money.format(item.price)}</a>`).join("")}</div>`
+    ? `<div class="reference-list">${rows[0].references.map(item => `<a href="${item.link}" target="_blank" rel="noreferrer">${escapeHtml(item.title)} Â· ${money.format(item.price)}</a>`).join("")}</div>`
     : "";
   target.innerHTML = `
     <div class="result-card">
@@ -776,14 +779,14 @@ function thumb(item, className = "") {
 function itemRow(i) {
   return `<article class="item-row">
     <button class="thumb-button" data-open-product="${i.id}" data-product-source="stock">${thumb(i)}</button>
-    <div><strong>${escapeHtml(i.code)} · ${escapeHtml(i.name || "Sem nome")}</strong><span>EAN ${escapeHtml(i.ean || "-")} · ${escapeHtml(i.location || "sem localizacao")} · ${daysSince(i.entryDate)} dias</span></div>
+    <div><strong>${escapeHtml(i.code)} Â· ${escapeHtml(i.name || "Sem nome")}</strong><span>EAN ${escapeHtml(i.ean || "-")} Â· ${escapeHtml(i.location || "sem localizacao")} Â· ${daysSince(i.entryDate)} dias</span></div>
     <span class="pill">${escapeHtml(i.status)}</span>
   </article>`;
 }
 
 function itemCompact(i) {
   const level = daysSince(i.entryDate) >= 180 ? "+180 dias" : "+90 dias";
-  return `<article class="calc-card"><strong>${escapeHtml(i.code)} · ${escapeHtml(i.name)}</strong><p>${level} em estoque · ${escapeHtml(i.location || "sem localizacao")} · ${money.format(num(i.saleValue) || num(i.suggestedValue))}</p></article>`;
+  return `<article class="calc-card"><strong>${escapeHtml(i.code)} Â· ${escapeHtml(i.name)}</strong><p>${level} em estoque Â· ${escapeHtml(i.location || "sem localizacao")} Â· ${money.format(num(i.saleValue) || num(i.suggestedValue))}</p></article>`;
 }
 
 function stockCard(item) {
@@ -792,8 +795,8 @@ function stockCard(item) {
     <button class="stock-open" data-open-product="${item.id}" data-product-source="stock">${thumb(item, "stock-photo")}</button>
     <div class="stock-card-body">
       <span class="pill">${escapeHtml(item.status)}</span>
-      <h3>${escapeHtml(item.code)} · ${escapeHtml(item.name || "Sem nome")}</h3>
-      <p>EAN ${escapeHtml(item.ean || "-")} · ${escapeHtml(item.category)}</p>
+      <h3>${escapeHtml(item.code)} Â· ${escapeHtml(item.name || "Sem nome")}</h3>
+      <p>EAN ${escapeHtml(item.ean || "-")} Â· ${escapeHtml(item.category)}</p>
       <dl>
         <div><dt>Marca</dt><dd>${escapeHtml(item.brand || "-")}</dd></div>
         <div><dt>Modelo</dt><dd>${escapeHtml(item.model || "-")}</dd></div>
@@ -818,9 +821,9 @@ function pendingCard(item) {
   return `<article class="pending-card">
     <button class="stock-open" data-open-product="${item.id}" data-product-source="pending">${thumb(item, "stock-photo")}</button>
     <div>
-      <h3>${escapeHtml(item.code)} · ${escapeHtml(item.name || "Sem nome")}</h3>
-      <p>EAN ${escapeHtml(item.ean || "-")} · criado por ${escapeHtml(item.createdBy || "colaborador")} · ${money.format(num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue))}</p>
-      <p>${escapeHtml(item.location || "sem localizacao")} · ${escapeHtml(item.notes || "sem observacoes")}</p>
+      <h3>${escapeHtml(item.code)} Â· ${escapeHtml(item.name || "Sem nome")}</h3>
+      <p>EAN ${escapeHtml(item.ean || "-")} Â· criado por ${escapeHtml(item.createdBy || "colaborador")} Â· ${money.format(num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue))}</p>
+      <p>${escapeHtml(item.location || "sem localizacao")} Â· ${escapeHtml(item.notes || "sem observacoes")}</p>
       ${action}
     </div>
   </article>`;
@@ -857,6 +860,66 @@ function saleLineItems(sale) {
 
 function activeSales() {
   return state.sales.filter(sale => sale.status !== "cancelada" && sale.status !== "estornada");
+}
+
+function activeReceivables() {
+  return state.receivables.filter(entry => !["Pago", "Cancelado", "Estornado"].includes(entry.status));
+}
+
+function receivableStatus(entry) {
+  if (["Cancelado", "Estornado"].includes(entry.status)) return entry.status;
+  if (num(entry.balanceOpen) <= 0) return "Pago";
+  if (entry.dueDate && entry.dueDate < today) return "Vencido";
+  if (num(entry.valuePaid) > 0 || num(entry.cashbackUsed) > 0) return "Parcial";
+  return "Em aberto";
+}
+
+function salePaymentSummary(sale) {
+  const value = num(sale.soldValue);
+  const cashback = num(sale.cashbackUsed);
+  const paidNow = num(sale.paidNow);
+  const paidTotal = Math.min(value, cashback + paidNow);
+  const balance = Math.max(0, value - paidTotal);
+  const status = balance <= 0 ? "Paga" : paidTotal > 0 ? "Parcialmente paga" : "Pendente";
+  return { value, cashback, paidNow, paidTotal, balance, status };
+}
+
+function upsertReceivableFromSale(sale) {
+  const summary = salePaymentSummary(sale);
+  let entry = state.receivables.find(item => item.saleId === sale.id);
+  if (summary.balance <= 0) {
+    if (entry) {
+      entry.valuePaid = summary.paidTotal;
+      entry.balanceOpen = 0;
+      entry.status = "Pago";
+      entry.paidAt ||= sale.soldAt || today;
+      stampUpdate(entry);
+    }
+    return null;
+  }
+  const payload = {
+    saleId: sale.id,
+    customer: sale.customer || "",
+    partner: sale.seller || sale.cashbackAccount || "",
+    date: sale.soldAt || today,
+    saleValue: summary.value,
+    valuePaid: summary.paidNow,
+    cashbackUsed: summary.cashback,
+    balanceOpen: summary.balance,
+    dueDate: sale.dueDate || "",
+    paymentMethod: sale.balancePayment || sale.payment || "",
+    notes: sale.financialNotes || "",
+    status: ""
+  };
+  payload.status = receivableStatus(payload);
+  if (entry) {
+    Object.assign(entry, payload);
+    stampUpdate(entry);
+  } else {
+    entry = stampCreate({ id: crypto.randomUUID(), ...payload });
+    state.receivables.unshift(entry);
+  }
+  return entry;
 }
 
 function dashboardFilters() {
@@ -972,7 +1035,7 @@ function pieChart(title, rows) {
   }).join(", ");
   return `<section class="panel chart-panel"><div class="panel-head"><h2>${escapeHtml(title)}</h2><span>${rows.length} categorias</span></div>
     <div class="pie-wrap"><div class="pie-chart" style="background: conic-gradient(${gradient || "#eee 0 100%"});"></div>
-    <div class="pie-legend">${rows.map((row, index) => `<span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(row.label)} · ${money.format(num(row.value))}</span>`).join("")}</div></div>
+    <div class="pie-legend">${rows.map((row, index) => `<span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(row.label)} Â· ${money.format(num(row.value))}</span>`).join("")}</div></div>
   </section>`;
 }
 
@@ -1016,6 +1079,10 @@ function dashboardHtml(tab = activeDashboardTab) {
   const boughtMonth = sum(monthPurchases, item => item.paidValue);
   const profitMonth = sum(monthSales, sale => sale.profit);
   const stockTotal = stockValue(data.items);
+  const receivableOpen = activeReceivables();
+  const receivableOverdue = receivableOpen.filter(entry => receivableStatus(entry) === "Vencido");
+  const receivedMonth = sum(state.receivables.filter(entry => monthKey(entry.paidAt || entry.updatedAt || "") === nowMonth && receivableStatus(entry) === "Pago"), entry => entry.valuePaid);
+  const biggestDebtor = [...receivableOpen].sort((a, b) => num(b.balanceOpen) - num(a.balanceOpen))[0];
   const stale90 = inStock.filter(item => daysSince(item.entryDate) > 90);
   const stale180 = inStock.filter(item => daysSince(item.entryDate) > 180);
   const lowStock = inStock.filter(item => item.category !== "Sucata" && num(item.quantity) <= 1);
@@ -1023,10 +1090,14 @@ function dashboardHtml(tab = activeDashboardTab) {
   const annualMonths = dashboardRowsByMonth(data, Array.from({ length: 12 }, (_, index) => `${new Date().getFullYear()}-${String(index + 1).padStart(2, "0")}`));
   const tabs = {
     principal: () => `${metricCards([
-      ["Total vendido no mês", money.format(soldMonth), "receita", "monthSales"],
-      ["Total comprado no mês", money.format(boughtMonth), "entradas"],
-      ["Lucro bruto do mês", money.format(profitMonth), "vendas - custo"],
-      ["Margem média", `${margin(soldMonth, profitMonth).toFixed(1)}%`, "mês atual"],
+      ["Total vendido no mÃªs", money.format(soldMonth), "receita", "monthSales"],
+      ["Total comprado no mÃªs", money.format(boughtMonth), "entradas"],
+      ["Lucro bruto do mÃªs", money.format(profitMonth), "vendas - custo"],
+      ["Contas a receber", money.format(sum(receivableOpen, entry => entry.balanceOpen)), "aberto"],
+      ["Contas vencidas", money.format(sum(receivableOverdue, entry => entry.balanceOpen)), "atrasado"],
+      ["Recebimentos mes", money.format(receivedMonth), "baixados"],
+      ["Maior devedor", biggestDebtor ? biggestDebtor.customer : "-", biggestDebtor ? money.format(num(biggestDebtor.balanceOpen)) : ""],
+      ["Margem mÃ©dia", `${margin(soldMonth, profitMonth).toFixed(1)}%`, "mÃªs atual"],
       ["Valor em estoque", money.format(stockTotal), "estimado"],
       ["Quantidade de itens", sum(inStock, item => item.quantity), "em estoque"],
       ["Sucata em estoque", `${sum(inStock.filter(i => i.category === "Sucata"), i => i.weight).toFixed(2)} kg`, "peso"],
@@ -1035,31 +1106,31 @@ function dashboardHtml(tab = activeDashboardTab) {
       [">90 dias", stale90.length, "parados"],
       [">180 dias", stale180.length, "parados"],
       ["Estoque baixo", lowStock.length, "alertas"]
-    ])}<div class="dashboard-grid">${lineChart("Receita mensal últimos 12 meses", months.map(row => ({ label: row.label, value: row.sold })))}${barChart("Compras x vendas", months.map(row => ({ label: row.label, value: row.bought, value2: row.sold })))}${lineChart("Evolução do lucro mensal", months.map(row => ({ label: row.label, value: row.profit })))}${barChart("Categorias mais vendidas", categorySummary(data.sales).map(row => ({ label: row.category, value: row.sold })))}</div>`,
+    ])}<div class="dashboard-grid">${lineChart("Receita mensal Ãºltimos 12 meses", months.map(row => ({ label: row.label, value: row.sold })))}${barChart("Compras x vendas", months.map(row => ({ label: row.label, value: row.bought, value2: row.sold })))}${lineChart("EvoluÃ§Ã£o do lucro mensal", months.map(row => ({ label: row.label, value: row.profit })))}${barChart("Categorias mais vendidas", categorySummary(data.sales).map(row => ({ label: row.category, value: row.sold })))}</div>`,
     anual: () => {
       const best = [...annualMonths].sort((a, b) => b.sold - a.sold)[0] || {};
       const worst = [...annualMonths].sort((a, b) => a.sold - b.sold)[0] || {};
       const first = annualMonths[0]?.sold || 0;
       const last = annualMonths.at(-1)?.sold || 0;
       const growth = first ? ((last - first) / first) * 100 : 0;
-      return `${metricCards([["Melhor mês", best.label || "-", money.format(best.sold)], ["Pior mês", worst.label || "-", money.format(worst.sold)], ["Crescimento", `${growth.toFixed(1)}%`, "jan-dez"]])}
+      return `${metricCards([["Melhor mÃªs", best.label || "-", money.format(best.sold)], ["Pior mÃªs", worst.label || "-", money.format(worst.sold)], ["Crescimento", `${growth.toFixed(1)}%`, "jan-dez"]])}
       <div class="dashboard-grid">${lineChart("Receita anual", annualMonths.map(row => ({ label: row.label, value: row.sold })))}${barChart("Compras x vendas", annualMonths.map(row => ({ label: row.label, value: row.bought, value2: row.sold })))}${pieChart("Categorias mais lucrativas", categorySummary(data.sales).map(row => ({ label: row.category, value: row.profit })))}</div>
-      ${tablePanel("Resumo mês a mês", annualMonths, [
-        { key: "label", label: "Mês" }, { key: "bought", label: "Compras", format: money.format }, { key: "sold", label: "Vendas", format: money.format }, { key: "profit", label: "Lucro", format: money.format }, { key: "margin", label: "Margem", format: value => `${num(value).toFixed(1)}%` }, { key: "scrapWeight", label: "Sucata kg" }, { key: "quantity", label: "Qtd vendida" }, { key: "stock", label: "Estoque", format: money.format }
+      ${tablePanel("Resumo mÃªs a mÃªs", annualMonths, [
+        { key: "label", label: "MÃªs" }, { key: "bought", label: "Compras", format: money.format }, { key: "sold", label: "Vendas", format: money.format }, { key: "profit", label: "Lucro", format: money.format }, { key: "margin", label: "Margem", format: value => `${num(value).toFixed(1)}%` }, { key: "scrapWeight", label: "Sucata kg" }, { key: "quantity", label: "Qtd vendida" }, { key: "stock", label: "Estoque", format: money.format }
       ])}`;
     },
     mensal: () => {
       const byClient = Object.values(monthSales.reduce((acc, sale) => { const key = sale.customer || "Sem cliente"; acc[key] ||= { name: key, total: 0 }; acc[key].total += num(sale.soldValue); return acc; }, {})).sort((a, b) => b.total - a.total);
       const byProduct = monthSales.map(sale => ({ product: saleProduct(sale).name || "Produto", total: num(sale.soldValue), profit: num(sale.profit) })).sort((a, b) => b.total - a.total);
-      return `${metricCards([["Total vendido", money.format(soldMonth)], ["Total comprado", money.format(boughtMonth)], ["Lucro", money.format(profitMonth)], ["Ticket médio", money.format(monthSales.length ? soldMonth / monthSales.length : 0)], ["Quantidade vendida", sum(monthSales, sale => num(sale.soldQuantity) || num(sale.soldWeight))]])}
+      return `${metricCards([["Total vendido", money.format(soldMonth)], ["Total comprado", money.format(boughtMonth)], ["Lucro", money.format(profitMonth)], ["Ticket mÃ©dio", money.format(monthSales.length ? soldMonth / monthSales.length : 0)], ["Quantidade vendida", sum(monthSales, sale => num(sale.soldQuantity) || num(sale.soldWeight))]])}
       <div class="dashboard-grid">${barChart("Clientes que mais compraram", byClient.slice(0, 8).map(row => ({ label: row.name, value: row.total })))}${barChart("Produtos mais vendidos", byProduct.slice(0, 8).map(row => ({ label: row.product, value: row.total })))}${barChart("Produtos mais lucrativos", [...byProduct].sort((a,b)=>b.profit-a.profit).slice(0,8).map(row => ({ label: row.product, value: row.profit })))}</div>
-      ${tablePanel("Últimas vendas", monthSales.slice(0, 12).map(sale => ({ date: sale.soldAt, product: saleProduct(sale).name, customer: sale.customer, value: sale.soldValue, profit: sale.profit })), [
+      ${tablePanel("Ãšltimas vendas", monthSales.slice(0, 12).map(sale => ({ date: sale.soldAt, product: saleProduct(sale).name, customer: sale.customer, value: sale.soldValue, profit: sale.profit })), [
         { key: "date", label: "Data" }, { key: "product", label: "Produto" }, { key: "customer", label: "Cliente" }, { key: "value", label: "Valor", format: money.format }, { key: "profit", label: "Lucro", format: money.format }
       ])}`;
     },
-    estoque: () => `${metricCards([["Valor total estimado", money.format(stockTotal)], ["Sucata", money.format(stockValue(inStock.filter(i=>i.category==="Sucata")))], ["Peças usadas", money.format(stockValue(inStock.filter(i=>i.category==="Peça usada")))], ["Revenda", money.format(stockValue(inStock.filter(i=>i.category==="Produto de revenda")))], [">90 dias", stale90.length], [">180 dias", stale180.length], ["Sem foto", inStock.filter(i=>!i.photo).length], ["Sem preço", inStock.filter(i=>!num(i.saleValue)&&!num(i.suggestedValue)&&!num(i.marketValue)).length], ["Sem anúncio", inStock.filter(i=>i.status!=="anunciado").length]])}
+    estoque: () => `${metricCards([["Valor total estimado", money.format(stockTotal)], ["Sucata", money.format(stockValue(inStock.filter(i=>i.category==="Sucata")))], ["PeÃ§as usadas", money.format(stockValue(inStock.filter(i=>i.category==="PeÃ§a usada")))], ["Revenda", money.format(stockValue(inStock.filter(i=>i.category==="Produto de revenda")))], [">90 dias", stale90.length], [">180 dias", stale180.length], ["Sem foto", inStock.filter(i=>!i.photo).length], ["Sem preÃ§o", inStock.filter(i=>!num(i.saleValue)&&!num(i.suggestedValue)&&!num(i.marketValue)).length], ["Sem anÃºncio", inStock.filter(i=>i.status!=="anunciado").length]])}
       ${tablePanel("Top 20 maiores valores parados em estoque", [...inStock].sort((a,b)=>(num(b.saleValue)||num(b.suggestedValue)||num(b.marketValue))-(num(a.saleValue)||num(a.suggestedValue)||num(a.marketValue))).slice(0,20).map(item => ({ code: item.code, product: item.name, category: item.category, days: daysSince(item.entryDate), value: num(item.saleValue)||num(item.suggestedValue)||num(item.marketValue) })), [
-        { key: "code", label: "Código" }, { key: "product", label: "Produto" }, { key: "category", label: "Categoria" }, { key: "days", label: "Dias" }, { key: "value", label: "Valor", format: money.format }
+        { key: "code", label: "CÃ³digo" }, { key: "product", label: "Produto" }, { key: "category", label: "Categoria" }, { key: "days", label: "Dias" }, { key: "value", label: "Valor", format: money.format }
       ])}`,
     compraVenda: () => `${tablePanel("Compra x venda por produto", data.sales.map(sale => { const item = saleProduct(sale); return { product: item.name, buy: saleCost(sale), sell: sale.soldValue, profit: sale.profit, margin: margin(num(sale.soldValue), num(sale.profit)), boughtKg: item.category === "Sucata" ? num(sale.soldWeight) : "", soldKg: num(sale.soldWeight) || "", buyKg: num(sale.soldWeight) ? saleCost(sale) / num(sale.soldWeight) : "", sellKg: num(sale.soldWeight) ? num(sale.soldValue) / num(sale.soldWeight) : "" }; }), [
         { key: "product", label: "Produto" }, { key: "buy", label: "Compra", format: money.format }, { key: "sell", label: "Venda", format: money.format }, { key: "profit", label: "Lucro", format: money.format }, { key: "margin", label: "Margem", format: v => `${num(v).toFixed(1)}%` }, { key: "soldKg", label: "Kg vendido" }, { key: "buyKg", label: "Compra/kg", format: v => v === "" ? "" : money.format(v) }, { key: "sellKg", label: "Venda/kg", format: v => v === "" ? "" : money.format(v) }
@@ -1075,7 +1146,7 @@ function dashboardHtml(tab = activeDashboardTab) {
       const columns = [{key:"product",label:"Produto"},{key:"category",label:"Categoria"},{key:"paid",label:"Valor pago",format:money.format},{key:"sold",label:"Valor vendido",format:money.format},{key:"profit",label:"Lucro",format:money.format},{key:"margin",label:"Margem",format:v=>`${num(v).toFixed(1)}%`}];
       return `${tablePanel("Produtos mais lucrativos", [...rows].sort((a,b)=>b.profit-a.profit).slice(0,10), columns)}
       ${tablePanel("Produtos menos lucrativos", [...rows].sort((a,b)=>a.profit-b.profit).slice(0,10), columns)}
-      ${barChart("Categorias mais rentáveis", categorySummary(data.sales).map(row => ({ label: row.category, value: row.profit })))}`;
+      ${barChart("Categorias mais rentÃ¡veis", categorySummary(data.sales).map(row => ({ label: row.category, value: row.profit })))}`;
     }
   };
 
@@ -1101,13 +1172,13 @@ function openDashboardDrill(type) {
   const data = filteredDashboardData();
   const nowMonth = monthKey(today);
   const sales = type === "monthSales" ? data.sales.filter(sale => monthKey(sale.soldAt) === nowMonth) : data.sales;
-  document.querySelector("#dashboardDrillTitle").textContent = type === "monthSales" ? "Vendas do mês" : "Vendas realizadas";
+  document.querySelector("#dashboardDrillTitle").textContent = type === "monthSales" ? "Vendas do mÃªs" : "Vendas realizadas";
   document.querySelector("#dashboardDrillBody").innerHTML = sales.length ? sales.map(sale => {
     const item = saleProduct(sale);
     return `<article class="calc-card clickable-row" data-open-sale="${sale.id}">
-      <strong>${escapeHtml(item.code || "Venda")} · ${escapeHtml(item.name || "Produto")}</strong>
-      <p>${escapeHtml(sale.soldAt || "-")} · ${escapeHtml(sale.customer || "sem cliente")} · ${money.format(num(sale.soldValue))}</p>
-      <p>Status: ${escapeHtml(sale.status || "concluida")} · Lucro: ${money.format(num(sale.profit))}</p>
+      <strong>${escapeHtml(item.code || "Venda")} Â· ${escapeHtml(item.name || "Produto")}</strong>
+      <p>${escapeHtml(sale.soldAt || "-")} Â· ${escapeHtml(sale.customer || "sem cliente")} Â· ${money.format(num(sale.soldValue))}</p>
+      <p>Status: ${escapeHtml(sale.status || "concluida")} Â· Lucro: ${money.format(num(sale.profit))}</p>
     </article>`;
   }).join("") : `<div class="empty">Nenhuma venda encontrada.</div>`;
   document.querySelector("#dashboardDrillBody").querySelectorAll("[data-open-sale]").forEach(row => {
@@ -1160,7 +1231,7 @@ function renderCollaboratorPending() {
 function renderSaleOptions() {
   const select = document.querySelector("#saleItem");
   const sellable = state.items.filter(i => i.status !== "vendido" && i.status !== "descartado" && i.status !== "excluido");
-  select.innerHTML = sellable.map(i => `<option value="${i.id}">${escapeHtml(i.code)} Â· ${escapeHtml(i.name)}</option>`).join("");
+  select.innerHTML = sellable.map(i => `<option value="${i.id}">${escapeHtml(i.code)} Ã‚Â· ${escapeHtml(i.name)}</option>`).join("");
   renderCustomerOptions();
   renderSaleItemPreview();
   updateSaleMeasureUI();
@@ -1180,9 +1251,9 @@ function renderSaleItemPreview() {
   target.innerHTML = `<button type="button" class="sale-item-card" data-open-product="${item.id}" data-product-source="stock">
     ${thumb(item, "sale-item-photo")}
     <span>
-      <strong>${escapeHtml(item.code)} Â· ${escapeHtml(item.name || "Sem nome")}</strong>
-      <small>EAN ${escapeHtml(item.ean || "-")} Â· ${escapeHtml(item.category || "-")} Â· Disponivel: ${escapeHtml(available)}</small>
-      <small>${escapeHtml(item.location || "sem localizacao")} Â· Valor base: ${money.format(value)}</small>
+      <strong>${escapeHtml(item.code)} Ã‚Â· ${escapeHtml(item.name || "Sem nome")}</strong>
+      <small>EAN ${escapeHtml(item.ean || "-")} Ã‚Â· ${escapeHtml(item.category || "-")} Ã‚Â· Disponivel: ${escapeHtml(available)}</small>
+      <small>${escapeHtml(item.location || "sem localizacao")} Ã‚Â· Valor base: ${money.format(value)}</small>
     </span>
   </button>`;
   bindProductOpeners(target);
@@ -1277,17 +1348,21 @@ function addCurrentItemToSaleCart() {
 function renderCustomerOptions() {
   const list = document.querySelector("#customerOptions");
   if (!list) return;
-  const customers = state.contacts.filter(contact => contact.type === "Cliente" || contact.type === "Cliente e fornecedor" || contact.type === "Vendedor");
+  const customers = state.contacts.filter(isCustomerContact);
   list.innerHTML = customers.map(contact => `<option value="${escapeHtml(contact.name)}">${escapeHtml(contact.document || contact.phone || contact.email || "")}</option>`).join("");
   renderSupplierOptions();
   renderSellerOptions();
+}
+
+function isCustomerContact(contact) {
+  return ["Cliente", "Cliente comum", "Parceiro recorrente", "Cliente faturado", "Interno", "Cliente e fornecedor", "Vendedor"].includes(contact?.type);
 }
 
 function findRegisteredCustomer(name) {
   const clean = `${name || ""}`.trim().toLowerCase();
   if (!clean) return null;
   return state.contacts.find(contact =>
-    (contact.type === "Cliente" || contact.type === "Cliente e fornecedor" || contact.type === "Vendedor")
+    isCustomerContact(contact)
     && contact.name.trim().toLowerCase() === clean
   ) || null;
 }
@@ -1312,7 +1387,7 @@ function renderInvoiceOptions() {
   select.innerHTML = state.sales.length
     ? state.sales.map(sale => {
       const item = state.items.find(i => i.id === sale.itemId);
-      return `<option value="${sale.id}">${escapeHtml(item?.code || "Venda")} · ${escapeHtml(item?.name || sale.customer || "Cliente")} · ${money.format(num(sale.soldValue))}</option>`;
+      return `<option value="${sale.id}">${escapeHtml(item?.code || "Venda")} Â· ${escapeHtml(item?.name || sale.customer || "Cliente")} Â· ${money.format(num(sale.soldValue))}</option>`;
     }).join("")
     : `<option value="">Nenhuma venda registrada</option>`;
 }
@@ -1322,8 +1397,8 @@ function renderInvoices() {
   if (!list) return;
   document.querySelector("#invoiceCount").textContent = `${state.invoices.length} notas`;
   list.innerHTML = state.invoices.length ? state.invoices.map(invoice => `<article class="calc-card">
-    <strong>${escapeHtml(invoice.number)} · ${money.format(num(invoice.value))}</strong>
-    <p>${escapeHtml(invoice.status)} · ${escapeHtml(invoice.document || "sem documento")} · ${escapeHtml(invoice.issuedAt)}</p>
+    <strong>${escapeHtml(invoice.number)} Â· ${money.format(num(invoice.value))}</strong>
+    <p>${escapeHtml(invoice.status)} Â· ${escapeHtml(invoice.document || "sem documento")} Â· ${escapeHtml(invoice.issuedAt)}</p>
   </article>`).join("") : `<div class="empty">Nenhuma nota fiscal cadastrada.</div>`;
 }
 
@@ -1338,11 +1413,11 @@ function renderSalesList() {
     const measure = lines.length > 1 ? `${lines.length} itens` : (num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`);
     const closed = sale.status === "cancelada" || sale.status === "estornada";
     return `<article class="calc-card clickable-row" data-open-sale="${sale.id}">
-      <strong>${escapeHtml(item.code || "Venda")} · ${escapeHtml(item.name || "Produto")}</strong>
-      <p>${escapeHtml(sale.soldAt)} · ${escapeHtml(sale.customer || "sem cliente")} · ${measure} · ${money.format(num(sale.soldValue))}</p>
-      <p>Status: ${escapeHtml(sale.status || "concluida")} · Vendedor: ${escapeHtml(sale.seller || "-")} · Cashback: ${money.format(num(sale.cashbackValue))}</p>
+      <strong>${escapeHtml(item.code || "Venda")} Â· ${escapeHtml(item.name || "Produto")}</strong>
+      <p>${escapeHtml(sale.soldAt)} Â· ${escapeHtml(sale.customer || "sem cliente")} Â· ${measure} Â· ${money.format(num(sale.soldValue))}</p>
+      <p>Status: ${escapeHtml(sale.status || "concluida")} Â· Vendedor: ${escapeHtml(sale.seller || "-")} Â· Cashback: ${money.format(num(sale.cashbackValue))}</p>
       ${sale.cashbackBlockedReason ? `<p>${escapeHtml(sale.cashbackBlockedReason)}</p>` : ""}
-      <p>Lucro: ${money.format(num(sale.profit))} · Nota: ${invoice ? escapeHtml(invoice.number) + " / " + escapeHtml(invoice.status) : "sem nota"}</p>
+      <p>Lucro: ${money.format(num(sale.profit))} Â· Nota: ${invoice ? escapeHtml(invoice.number) + " / " + escapeHtml(invoice.status) : "sem nota"}</p>
       ${sale.reversalReason ? `<p>Motivo: ${escapeHtml(sale.reversalReason)}</p>` : ""}
       ${closed ? "" : `<div class="actions inline-actions">
         <button class="secondary-btn small-btn" data-cancel-sale="${sale.id}">Cancelar venda</button>
@@ -1456,6 +1531,90 @@ function renderSalesInventory() {
   bindProductOpeners(target);
 }
 
+function filteredReceivables() {
+  const client = document.querySelector("#receivableClientFilter")?.value.trim().toLowerCase() || "";
+  const status = document.querySelector("#receivableStatusFilter")?.value || "";
+  const start = document.querySelector("#receivableStartFilter")?.value || "";
+  const end = document.querySelector("#receivableEndFilter")?.value || "";
+  return state.receivables.map(entry => ({ ...entry, status: receivableStatus(entry) })).filter(entry => {
+    const text = `${entry.customer} ${entry.partner}`.toLowerCase();
+    return (!client || text.includes(client))
+      && (!status || entry.status === status)
+      && (!start || (entry.dueDate || entry.date || "") >= start)
+      && (!end || (entry.dueDate || entry.date || "") <= end);
+  });
+}
+
+function renderReceivables() {
+  const list = document.querySelector("#receivablesList");
+  const dashboard = document.querySelector("#receivablesDashboard");
+  if (!list || !dashboard) return;
+  state.receivables.forEach(entry => entry.status = receivableStatus(entry));
+  const rows = filteredReceivables().sort((a, b) => new Date(a.dueDate || a.date || 0) - new Date(b.dueDate || b.date || 0));
+  const openRows = state.receivables.map(entry => ({ ...entry, status: receivableStatus(entry) })).filter(entry => !["Pago", "Cancelado", "Estornado"].includes(entry.status));
+  const overdue = openRows.filter(entry => entry.status === "Vencido");
+  const todayRows = openRows.filter(entry => entry.dueDate === today);
+  const monthRows = openRows.filter(entry => monthKey(entry.dueDate || entry.date) === monthKey(today));
+  document.querySelector("#receivablesCount").textContent = `${rows.length} contas`;
+  dashboard.innerHTML = metricCards([
+    ["Total aberto", money.format(sum(openRows, row => row.balanceOpen)), "saldo pendente"],
+    ["Total vencido", money.format(sum(overdue, row => row.balanceOpen)), "atrasado"],
+    ["Receber hoje", money.format(sum(todayRows, row => row.balanceOpen)), today],
+    ["Receber mes", money.format(sum(monthRows, row => row.balanceOpen)), monthLabel(monthKey(today))]
+  ]);
+  list.innerHTML = rows.length ? rows.map(entry => `<article class="calc-card">
+    <strong>${escapeHtml(entry.customer || "Cliente")} - ${money.format(num(entry.balanceOpen))}</strong>
+    <p>Venda: ${money.format(num(entry.saleValue))} - Pago: ${money.format(num(entry.valuePaid))} - Cashback: ${money.format(num(entry.cashbackUsed))}</p>
+    <p>Status: ${escapeHtml(entry.status)} - Vencimento: ${escapeHtml(entry.dueDate || "-")} - Forma: ${escapeHtml(entry.paymentMethod || "-")}</p>
+    <p>Parceiro: ${escapeHtml(entry.partner || "-")} - Obs: ${escapeHtml(entry.notes || "-")}</p>
+    <div class="actions inline-actions">
+      <button type="button" class="secondary-btn small-btn" data-receivable-partial="${entry.id}">Pagamento parcial</button>
+      <button type="button" class="primary-btn small-btn" data-receivable-full="${entry.id}">Baixar total</button>
+      <button type="button" class="secondary-btn small-btn" data-receivable-due="${entry.id}">Editar vencimento</button>
+      <button type="button" class="secondary-btn small-btn" data-open-sale="${entry.saleId}">Abrir venda</button>
+    </div>
+  </article>`).join("") : `<div class="empty">Nenhuma conta a receber encontrada.</div>`;
+  list.querySelectorAll("[data-receivable-partial]").forEach(button => button.addEventListener("click", () => payReceivable(button.dataset.receivablePartial, false)));
+  list.querySelectorAll("[data-receivable-full]").forEach(button => button.addEventListener("click", () => payReceivable(button.dataset.receivableFull, true)));
+  list.querySelectorAll("[data-receivable-due]").forEach(button => button.addEventListener("click", () => editReceivableDue(button.dataset.receivableDue)));
+  list.querySelectorAll("[data-open-sale]").forEach(button => button.addEventListener("click", () => openSale(button.dataset.openSale)));
+}
+
+function payReceivable(id, full = false) {
+  const entry = state.receivables.find(item => item.id === id);
+  if (!entry) return;
+  const currentBalance = num(entry.balanceOpen);
+  const value = full ? currentBalance : num(prompt("Valor recebido:", currentBalance.toFixed(2)));
+  if (!value || value <= 0) return;
+  if (value > currentBalance) return toast("Valor recebido maior que o saldo aberto");
+  entry.valuePaid = num(entry.valuePaid) + value;
+  entry.balanceOpen = Math.max(0, currentBalance - value);
+  entry.status = receivableStatus(entry);
+  if (entry.status === "Pago") entry.paidAt = new Date().toISOString();
+  entry.notes = [entry.notes, `Recebimento de ${money.format(value)} por ${currentUsername()} em ${new Date().toLocaleString("pt-BR")}`].filter(Boolean).join("\n");
+  stampUpdate(entry);
+  const sale = state.sales.find(item => item.id === entry.saleId);
+  if (sale) {
+    sale.paidNow = num(sale.paidNow) + value;
+    sale.paymentStatus = salePaymentSummary(sale).status;
+    stampUpdate(sale);
+  }
+  save();
+  toast(entry.status === "Pago" ? "Conta baixada" : "Pagamento parcial registrado");
+}
+
+function editReceivableDue(id) {
+  const entry = state.receivables.find(item => item.id === id);
+  if (!entry) return;
+  const dueDate = prompt("Novo vencimento (AAAA-MM-DD):", entry.dueDate || today);
+  if (dueDate === null) return;
+  entry.dueDate = dueDate.trim();
+  entry.status = receivableStatus(entry);
+  stampUpdate(entry);
+  save();
+  toast("Vencimento atualizado");
+}
+
 function saleDetails(id) {
   const sale = state.sales.find(item => item.id === id);
   if (!sale) return null;
@@ -1485,6 +1644,11 @@ function openSale(id) {
     ["Cashback %", sale.cashbackPercent ? `${num(sale.cashbackPercent).toFixed(2)}%` : "-"],
     ["Cashback", money.format(num(sale.cashbackValue))],
     ["Cashback usado", money.format(num(sale.cashbackUsed))],
+    ["Pago agora", money.format(num(sale.paidNow))],
+    ["Saldo restante", money.format(num(sale.balanceOpen))],
+    ["Status financeiro", sale.paymentStatus || salePaymentSummary(sale).status],
+    ["Vencimento saldo", sale.dueDate],
+    ["Pagamento saldo", sale.balancePayment],
     ["Regra cashback", sale.cashbackBlockedReason || "normal"],
     ["Data da venda", sale.soldAt],
     ["Medida vendida", measure],
@@ -1496,7 +1660,7 @@ function openSale(id) {
     ["Criado em", sale.createdAt ? new Date(sale.createdAt).toLocaleString("pt-BR") : ""],
     ["Editado por", sale.updatedBy],
     ["Editado em", sale.updatedAt ? new Date(sale.updatedAt).toLocaleString("pt-BR") : ""],
-    ["Nota fiscal", invoice ? `${invoice.number} · ${invoice.status}` : "sem nota"],
+    ["Nota fiscal", invoice ? `${invoice.number} Â· ${invoice.status}` : "sem nota"],
     ["Cancelamento/estorno", sale.reversalReason],
     ["Feito por", sale.reversedBy],
     ["Data do evento", sale.reversedAt ? new Date(sale.reversedAt).toLocaleString("pt-BR") : ""]
@@ -1520,17 +1684,21 @@ function printSale(id) {
     <h1>Comprovante de venda</h1>
     <p class="status">Status: ${escapeHtml(sale.status || "concluida")}</p>
     <table><tbody>
-      <tr><th>Produto</th><td>${escapeHtml(item.code || "")} · ${escapeHtml(item.name || "")}</td></tr>
+      <tr><th>Produto</th><td>${escapeHtml(item.code || "")} Â· ${escapeHtml(item.name || "")}</td></tr>
       <tr><th>EAN</th><td>${escapeHtml(item.ean || "-")}</td></tr>
       <tr><th>Cliente</th><td>${escapeHtml(sale.customer || "-")}</td></tr>
       <tr><th>Data</th><td>${escapeHtml(sale.soldAt || "-")}</td></tr>
       <tr><th>Medida vendida</th><td>${escapeHtml(measure)}</td></tr>
       <tr><th>Itens</th><td><table><thead><tr><th>Codigo</th><th>Produto</th><th>Medida</th><th>Valor</th></tr></thead><tbody>${linesHtml}</tbody></table></td></tr>
       <tr><th>Valor vendido</th><td>${money.format(num(sale.soldValue))}</td></tr>
+      <tr><th>Pago</th><td>${money.format(num(sale.paidNow))}</td></tr>
+      <tr><th>Cashback usado</th><td>${money.format(num(sale.cashbackUsed))}</td></tr>
+      <tr><th>Saldo restante</th><td>${money.format(num(sale.balanceOpen))}</td></tr>
+      <tr><th>Status financeiro</th><td>${escapeHtml(sale.paymentStatus || salePaymentSummary(sale).status)}</td></tr>
       <tr><th>Lucro</th><td>${money.format(num(sale.profit))}</td></tr>
       <tr><th>Pagamento</th><td>${escapeHtml(sale.payment || "-")}</td></tr>
       <tr><th>Canal</th><td>${escapeHtml(sale.channel || "-")}</td></tr>
-      <tr><th>Nota fiscal</th><td>${invoice ? `${escapeHtml(invoice.number)} · ${escapeHtml(invoice.status)}` : "sem nota"}</td></tr>
+      <tr><th>Nota fiscal</th><td>${invoice ? `${escapeHtml(invoice.number)} Â· ${escapeHtml(invoice.status)}` : "sem nota"}</td></tr>
       <tr><th>Historico</th><td>${escapeHtml(sale.reversalReason || "Venda concluida sem cancelamento/estorno")}</td></tr>
     </tbody></table>
     <script>window.print();</script>
@@ -1570,6 +1738,13 @@ function reverseSale(id, status) {
     invoice.notes = [invoice.notes, `${status} em ${new Date().toLocaleString("pt-BR")}: ${sale.reversalReason}`].filter(Boolean).join("\n");
     stampUpdate(invoice);
   }
+  const receivable = state.receivables.find(entry => entry.saleId === sale.id);
+  if (receivable) {
+    receivable.balanceOpen = 0;
+    receivable.status = status === "cancelada" ? "Cancelado" : "Estornado";
+    receivable.notes = [receivable.notes, `${status} da venda: ${sale.reversalReason}`].filter(Boolean).join("\n");
+    stampUpdate(receivable);
+  }
   save();
   toast(status === "cancelada" ? "Venda cancelada e estoque restaurado" : "Estorno registrado e estoque restaurado");
 }
@@ -1593,6 +1768,10 @@ function editSale(id) {
   form.seller.value = sale.seller || "";
   form.cashbackPercent.value = num(sale.cashbackPercent);
   form.cashbackUsed.value = num(sale.cashbackUsed);
+  if (form.paidNow) form.paidNow.value = num(sale.paidNow);
+  if (form.dueDate) form.dueDate.value = sale.dueDate || "";
+  if (form.balancePayment) form.balancePayment.value = sale.balancePayment || "";
+  if (form.cardFee) form.cardFee.value = num(sale.cardFee);
   form.payment.value = sale.payment || "";
   form.channel.value = sale.channel || "OLX";
   const invoice = state.invoices.find(note => note.saleId === sale.id);
@@ -1601,7 +1780,7 @@ function editSale(id) {
   form.invoiceDocument.value = invoice?.document || "";
   form.invoiceStatus.value = invoice?.status || "pendente";
   form.invoiceNotes.value = invoice?.notes || "";
-  form.querySelector("button[type='submit']").textContent = "Salvar alterações da venda";
+  form.querySelector("button[type='submit']").textContent = "Salvar alteraÃ§Ãµes da venda";
   document.querySelector("#saleDialog")?.close();
   updateSaleEditPreview();
   document.querySelector("#saleEditDialog").showModal();
@@ -1618,7 +1797,7 @@ function renderUsers() {
   if (!list) return;
   list.innerHTML = state.users.map(user => `<article class="item-row user-row">
     <div class="thumb-placeholder">${user.role === "admin" ? "AD" : "CO"}</div>
-    <div><strong>${escapeHtml(user.username)}</strong><span>${user.role === "admin" ? "Administrador" : "Colaborador"} Â· ${escapeHtml(auditLine(user))}</span></div>
+    <div><strong>${escapeHtml(user.username)}</strong><span>${user.role === "admin" ? "Administrador" : "Colaborador"} Ã‚Â· ${escapeHtml(auditLine(user))}</span></div>
     <div class="row-actions">
       <span class="pill">${escapeHtml(user.role)}</span>
       <button class="secondary-btn small-btn" data-edit-user="${user.id}">Editar</button>
@@ -1643,7 +1822,7 @@ function editUser(id) {
   form.username.value = user.username;
   form.password.value = user.password;
   form.role.value = user.role;
-  form.querySelector("button[type='submit']").textContent = "Salvar alterações";
+  form.querySelector("button[type='submit']").textContent = "Salvar alteraÃ§Ãµes";
   switchView("configuracao");
 }
 
@@ -1672,8 +1851,8 @@ function renderContacts() {
     <div class="thumb-placeholder">${contact.type?.startsWith("Fornecedor") ? "FO" : "CL"}</div>
     <div>
       <strong>${escapeHtml(contact.name)}</strong>
-      <span>${escapeHtml(contact.type)} · ${escapeHtml(contact.document || "sem documento")} · ${escapeHtml(contact.phone || "sem telefone")}</span>
-      <span>${escapeHtml(contact.email || "")} ${contact.contactPerson ? "· " + escapeHtml(contact.contactPerson) : ""}</span>
+      <span>${escapeHtml(contact.type)} Â· ${escapeHtml(contact.document || "sem documento")} Â· ${escapeHtml(contact.phone || "sem telefone")}</span>
+      <span>${escapeHtml(contact.email || "")} ${contact.contactPerson ? "Â· " + escapeHtml(contact.contactPerson) : ""}</span>
     </div>
     <div class="row-actions">
       <span class="pill">${escapeHtml(contact.status)}</span>
@@ -1724,7 +1903,7 @@ function renderSellersDashboard() {
     ["Vendedores", sellers.length, "cadastrados"],
     ["Vendas com vendedor", sum(rows, row => row.count), "quantidade"],
     ["Valor vendido", money.format(sum(rows, row => row.sold)), "por vendedores"],
-    ["Cashback gerado", money.format(sum(rows, row => row.cashback)), "comissões"],
+    ["Cashback gerado", money.format(sum(rows, row => row.cashback)), "comissÃµes"],
     ["Cashback usado", money.format(sum(rows, row => row.used)), "encontro de contas"],
     ["Saldo cashback", money.format(sum(rows, row => row.balance)), "a pagar/usar"]
   ])}${barChart("Valor vendido por vendedor", rows.map(row => ({ label: row.name, value: row.sold })))}${tablePanel("Resumo de vendedores", rows, [
@@ -1732,7 +1911,7 @@ function renderSellersDashboard() {
     { key: "phone", label: "Contato" },
     { key: "count", label: "Vendas" },
     { key: "sold", label: "Valor vendido", format: money.format },
-    { key: "avgCashback", label: "% médio", format: value => `${num(value).toFixed(2)}%` },
+    { key: "avgCashback", label: "% mÃ©dio", format: value => `${num(value).toFixed(2)}%` },
     { key: "cashback", label: "Gerado", format: money.format },
     { key: "used", label: "Usado", format: money.format },
     { key: "balance", label: "Saldo", format: money.format }
@@ -1765,11 +1944,11 @@ function openSellerDetails(name) {
   document.querySelector("#sellerDialogBody").innerHTML = `${metricCards([
     ["Vendas feitas", generatedSales.length, "quantidade"],
     ["Valor vendido", money.format(sum(generatedSales, sale => sale.soldValue)), "total"],
-    ["Cashback gerado", money.format(generated), `${num(seller?.cashbackPercent).toFixed(2)}% padrão`],
+    ["Cashback gerado", money.format(generated), `${num(seller?.cashbackPercent).toFixed(2)}% padrÃ£o`],
     ["Cashback usado", money.format(used), "abatido em vendas"],
-    ["Saldo", money.format(generated - used), "disponível"]
+    ["Saldo", money.format(generated - used), "disponÃ­vel"]
   ])}
-  <div class="calc-card"><strong>Como abater cashback</strong><p>Na tela Saída / Venda, selecione esse vendedor como cliente e informe o valor em <b>Cashback usado (R$)</b>. O sistema baixa esse valor do saldo dele automaticamente.</p></div>
+  <div class="calc-card"><strong>Como abater cashback</strong><p>Na tela SaÃ­da / Venda, selecione esse vendedor como cliente e informe o valor em <b>Cashback usado (R$)</b>. O sistema baixa esse valor do saldo dele automaticamente.</p></div>
   ${tablePanel("Vendas que geraram cashback", generatedSales.map(sale => ({ id: sale.id, data: sale.soldAt, produto: saleProduct(sale).name, valor: sale.soldValue, cashback: sale.cashbackValue })), [
     { key: "data", label: "Data" }, { key: "produto", label: "Produto" }, { key: "valor", label: "Venda", format: money.format }, { key: "cashback", label: "Cashback", format: money.format }
   ])}
@@ -1808,13 +1987,14 @@ function updateCashbackBalanceInfo() {
   const balance = getSellerCashbackBalance(account);
   const form = document.querySelector("#saleForm");
   const used = num(form.cashbackUsed.value);
+  const paidNow = num(form.paidNow?.value);
   const cartTotal = saleCart.length ? sum(saleCart, line => line.soldValue) : num(form.soldValue.value);
-  const remainingPayment = Math.max(0, cartTotal - used);
+  const remainingPayment = Math.max(0, cartTotal - used - paidNow);
   if (!account) {
     info.innerHTML = "Selecione um vendedor/cliente para ver saldo de cashback.";
     return;
   }
-  info.innerHTML = `<strong>Cashback disponivel de ${escapeHtml(account)}: ${money.format(balance)}</strong><span>Usando nesta venda: ${money.format(used)} · Saldo apos compra: ${money.format(balance - used)} · A pagar: ${money.format(remainingPayment)}</span>`;
+  info.innerHTML = `<strong>Cashback disponivel de ${escapeHtml(account)}: ${money.format(balance)}</strong><span>Usando: ${money.format(used)} - Pago agora: ${money.format(paidNow)} - Saldo da venda: ${money.format(remainingPayment)}</span>`;
 }
 
 function openContact(id) {
@@ -1827,10 +2007,10 @@ function openContact(id) {
     ["CPF / CNPJ", contact.document],
     ["Telefone", contact.phone],
     ["E-mail", contact.email],
-    ["Contato responsável", contact.contactPerson],
-    ["Endereço", contact.address],
+    ["Contato responsÃ¡vel", contact.contactPerson],
+    ["EndereÃ§o", contact.address],
     ["Status", contact.status],
-    ["Observações", contact.notes],
+    ["ObservaÃ§Ãµes", contact.notes],
     ["Criado por", contact.createdBy],
     ["Criado em", contact.createdAt ? new Date(contact.createdAt).toLocaleString("pt-BR") : ""],
     ["Editado por", contact.updatedBy],
@@ -1848,7 +2028,7 @@ function editContact(id) {
   ["type", "name", "document", "phone", "email", "contactPerson", "cashbackPercent", "address", "status", "notes"].forEach(field => {
     if (form.elements[field]) form.elements[field].value = contact[field] || "";
   });
-  form.querySelector("button[type='submit']").textContent = "Salvar alterações";
+  form.querySelector("button[type='submit']").textContent = "Salvar alteraÃ§Ãµes";
   document.querySelector("#contactDialog")?.close();
   switchView("contatos");
 }
@@ -1889,6 +2069,7 @@ function render() {
   renderInvoices();
   renderSalesList();
   renderSalesInventory();
+  renderReceivables();
   renderReports();
   renderUsers();
   renderContacts();
@@ -1937,7 +2118,7 @@ function openProduct(id, source = "stock") {
   activeProduct = { id, source };
   const dialog = document.querySelector("#productDialog");
   const form = document.querySelector("#productEditForm");
-  document.querySelector("#productDialogTitle").textContent = `${item.code} · ${item.name || "Produto"}`;
+  document.querySelector("#productDialogTitle").textContent = `${item.code} Â· ${item.name || "Produto"}`;
   document.querySelector("#dialogPhoto").innerHTML = thumb(item, "stock-photo");
   const invoiceLink = item.purchaseInvoiceFile
     ? `<a href="${item.purchaseInvoiceFile}" target="_blank" rel="noreferrer">${escapeHtml(item.purchaseInvoiceFileName || "Abrir NF anexada")}</a>`
@@ -2067,6 +2248,10 @@ document.querySelectorAll("[data-report-tab]").forEach(button => {
   });
 });
 
+["#receivableClientFilter", "#receivableStatusFilter", "#receivableStartFilter", "#receivableEndFilter"].forEach(selector => {
+  document.querySelector(selector)?.addEventListener("input", renderReceivables);
+});
+
 document.querySelector("#exportDashboardExcel")?.addEventListener("click", () => {
   exportTable(`dashboard-${activeDashboardTab}.xls`, dashboardExportRows());
 });
@@ -2131,7 +2316,7 @@ document.querySelector("input[name='photo']").addEventListener("change", async (
   try {
     const suggestion = await identifyProductWithVision(src);
     applyAiSuggestionToForm(suggestion);
-    document.querySelector("#aiResult").innerHTML = `<div class="result-card"><strong>Produto identificado pela foto</strong><p>${escapeHtml(suggestion.name)} · ${escapeHtml(suggestion.category)} · confiança ${Math.round(num(suggestion.confidence) * 100)}%</p><p>${escapeHtml(suggestion.notes)}</p></div>`;
+    document.querySelector("#aiResult").innerHTML = `<div class="result-card"><strong>Produto identificado pela foto</strong><p>${escapeHtml(suggestion.name)} Â· ${escapeHtml(suggestion.category)} Â· confianÃ§a ${Math.round(num(suggestion.confidence) * 100)}%</p><p>${escapeHtml(suggestion.notes)}</p></div>`;
   } catch (error) {
     const fallback = inferItemFromPhotoName(e.target.files[0].name);
     applyAiSuggestionToForm({
@@ -2292,6 +2477,15 @@ document.querySelector("input[name='cashbackUsed']").addEventListener("input", (
 document.querySelector("#addSaleItemBtn")?.addEventListener("click", addCurrentItemToSaleCart);
 document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (e.target.dataset.saving === "true") return;
+  e.target.dataset.saving = "true";
+  const submitButton = e.target.querySelector("button[type='submit']");
+  const originalButtonText = submitButton?.textContent || "Finalizar venda";
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Salvando venda...";
+  }
+  try {
   const data = Object.fromEntries(new FormData(e.target).entries());
   if (!saleCart.length) {
     const line = currentSaleLineFromForm();
@@ -2308,11 +2502,18 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   const soldQuantityTotal = sum(saleCart, line => line.soldQuantity);
   const cashbackAccount = registeredCustomer.type === "Vendedor" ? registeredCustomer.name : data.seller;
   const cashbackUsed = num(data.cashbackUsed);
+  const paidNow = num(data.paidNow);
+  const cardFee = num(data.cardFee);
+  if (cashbackUsed > soldTotal) return toast("Cashback nao pode ser maior que o valor da venda");
   const sellerBalance = getSellerCashbackBalance(cashbackAccount);
   if (cashbackUsed > 0 && cashbackUsed > sellerBalance) return toast("Cashback usado maior que o saldo do vendedor");
-  if (cashbackUsed > 0 && cashbackUsed < soldTotal && !String(data.payment || "").trim()) {
+  const paymentTotal = cashbackUsed + paidNow;
+  const balanceOpen = Math.max(0, soldTotal - paymentTotal);
+  if (paymentTotal > soldTotal) return toast("Pagamento + cashback maior que o valor da venda");
+  if (balanceOpen > 0 && !String(data.balancePayment || data.payment || "").trim()) {
     return toast("Informe como sera pago o saldo restante da venda");
   }
+  if (balanceOpen > 0 && !data.dueDate) return toast("Informe o vencimento do saldo restante");
   if (cashbackUsed > 0 && cashbackUsed >= soldTotal && !String(data.payment || "").trim()) {
     data.payment = "Cashback";
   }
@@ -2332,6 +2533,10 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
     cashbackPercent: num(data.cashbackPercent),
     cashbackValue,
     cashbackUsed,
+    paidNow,
+    cardFee,
+    balanceOpen,
+    paymentStatus: balanceOpen <= 0 ? "Paga" : paymentTotal > 0 ? "Parcialmente paga" : "Pendente",
     cashbackAccount,
     cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback"
   };
@@ -2366,6 +2571,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
       notes: data.invoiceNotes,
     }));
   }
+  const receivable = upsertReceivableFromSale(sale);
   save();
   await syncCloudNow(false);
   saleCart = [];
@@ -2375,7 +2581,17 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   updateSaleMeasureUI();
   renderSaleCart();
   updateCashbackBalanceInfo();
-  toast(`Venda registrada: lucro ${money.format(sale.profit)}`);
+  const message = receivable
+    ? `Venda concluida. Cashback aplicado: ${money.format(cashbackUsed)}. Saldo restante: ${money.format(balanceOpen)}. Conta a receber criada.`
+    : `Venda concluida. Pago: ${money.format(paymentTotal)}. Lucro ${money.format(sale.profit)}`;
+  toast(message);
+  } finally {
+    e.target.dataset.saving = "";
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalButtonText;
+    }
+  }
 });
 
 function updateSalePreview() {
@@ -2479,6 +2695,11 @@ async function saveSaleEdit(form) {
   }
   const generatesCashback = !(registeredCustomer.type === "Vendedor" && cashbackUsed > 0);
   const cashbackValue = generatesCashback ? num(data.soldValue) * (num(data.cashbackPercent) / 100) : 0;
+  const paidNow = num(data.paidNow);
+  const balanceOpen = Math.max(0, num(data.soldValue) - cashbackUsed - paidNow);
+  if (cashbackUsed > num(data.soldValue)) return toast("Cashback nao pode ser maior que o valor da venda");
+  if (cashbackUsed + paidNow > num(data.soldValue)) return toast("Pagamento + cashback maior que o valor da venda");
+  if (balanceOpen > 0 && !data.dueDate) return toast("Informe o vencimento do saldo restante");
   const originalMeasure = num(sale.soldWeight) || num(sale.soldQuantity) || 1;
   const originalCost = num(sale.soldValue) - num(sale.profit);
   const costBase = originalMeasure ? originalCost * ((soldWeight || soldQuantity || 1) / originalMeasure) : originalCost;
@@ -2490,6 +2711,10 @@ async function saveSaleEdit(form) {
     cashbackPercent: num(data.cashbackPercent),
     cashbackValue,
     cashbackUsed,
+    paidNow,
+    cardFee: num(data.cardFee),
+    balanceOpen,
+    paymentStatus: balanceOpen <= 0 ? "Paga" : cashbackUsed + paidNow > 0 ? "Parcialmente paga" : "Pendente",
     cashbackAccount,
     cashbackBlockedReason: generatesCashback ? "" : "Compra paga com cashback nao gera novo cashback",
     updatedAt: new Date().toISOString(),
@@ -2509,6 +2734,7 @@ async function saveSaleEdit(form) {
     invoice.customer = sale.customer;
     stampUpdate(invoice);
   }
+  upsertReceivableFromSale(sale);
   editingSaleId = "";
   save();
   await syncCloudNow(false);
@@ -2520,7 +2746,11 @@ async function saveSaleEdit(form) {
 
 function saleUnitReference(item) {
   if (!item) return 0;
-  return num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue);
+  const reference = num(item.saleValue) || num(item.suggestedValue) || num(item.marketValue);
+  if (item.category !== "Sucata") return reference;
+  const weight = num(item.weight);
+  if (weight && reference > 0 && num(item.paidValue) > 0 && reference > num(item.paidValue)) return reference / weight;
+  return reference;
 }
 
 function syncSaleUnitValue(force = false) {
@@ -2667,7 +2897,7 @@ document.querySelector("#seedBtn")?.addEventListener("click", async () => {
   Object.keys(state).forEach(key => delete state[key]);
   Object.assign(state, blankState(currentUsers));
   state.items = [
-    { id: crypto.randomUUID(), code: "UNI-0001", ean: "7891000000011", name: "Motor WEG 2CV usado", category: "Peça usada", subcategory: "Motor", brand: "WEG", model: "2CV", quantity: 1, weight: 18, condition: "funcionando", paidValue: 260, marketValue: 720, suggestedValue: 650, saleValue: 690, location: "Galpao A / Prateleira 2", entryDate: "2026-01-20", status: "anunciado", adLink: "", notes: "", photo: "", createdAt: new Date().toISOString(), validationStatus: "approved", createdBy: "admin" },
+    { id: crypto.randomUUID(), code: "UNI-0001", ean: "7891000000011", name: "Motor WEG 2CV usado", category: "PeÃ§a usada", subcategory: "Motor", brand: "WEG", model: "2CV", quantity: 1, weight: 18, condition: "funcionando", paidValue: 260, marketValue: 720, suggestedValue: 650, saleValue: 690, location: "Galpao A / Prateleira 2", entryDate: "2026-01-20", status: "anunciado", adLink: "", notes: "", photo: "", createdAt: new Date().toISOString(), validationStatus: "approved", createdBy: "admin" },
     { id: crypto.randomUUID(), code: "UNI-0002", ean: "7891000000028", name: "Sucata de cobre limpo", category: "Sucata", subcategory: "cobre", brand: "", model: "", quantity: 1, weight: 42, condition: "sucata", paidValue: 1260, marketValue: 1596, suggestedValue: 1596, saleValue: 1596, location: "Container 1", entryDate: "2025-11-05", status: "em estoque", adLink: "", notes: "", photo: "", createdAt: new Date().toISOString(), validationStatus: "approved", createdBy: "admin" },
     { id: crypto.randomUUID(), code: "UNI-0003", ean: "7891000000035", name: "Compressor para revenda", category: "Produto de revenda", subcategory: "Compressor", brand: "Schulz", model: "MSV", quantity: 1, weight: 33, condition: "usado", paidValue: 480, marketValue: 980, suggestedValue: 900, saleValue: 930, location: "", entryDate: "2026-04-12", status: "em estoque", adLink: "", notes: "", photo: "", createdAt: new Date().toISOString(), validationStatus: "approved", createdBy: "admin" }
   ];
@@ -2888,3 +3118,4 @@ render();
     lockApp();
   }
 })();
+

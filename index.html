@@ -37,6 +37,7 @@
         <button data-view="alerta" data-admin-only="true">Alerta</button>
         <button data-view="sucata">Sucata por peso</button>
         <button data-view="venda">Saida / Venda</button>
+        <button data-view="contasReceber">Contas a receber</button>
         <button data-view="inventarioVendas">Inventario de produtos</button>
         <button data-view="relatorios">Relatorios</button>
         <button data-view="configuracao" data-admin-only="true">Configuração</button>
@@ -232,7 +233,11 @@
               <label>Tipo
                 <select name="type">
                   <option>Cliente</option>
+                  <option>Cliente comum</option>
+                  <option>Parceiro recorrente</option>
                   <option>Fornecedor</option>
+                  <option>Cliente faturado</option>
+                  <option>Interno</option>
                   <option>Cliente e fornecedor</option>
                   <option>Vendedor</option>
                 </select>
@@ -328,8 +333,51 @@
                 <datalist id="sellerOptions"></datalist>
               </label>
               <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" value="0" /></label>
-              <label>Forma de pagamento <input name="payment" placeholder="Pix, dinheiro, cartão..." /></label>
+              <label>Forma de pagamento
+                <select name="payment">
+                  <optgroup label="A vista">
+                    <option>Pix</option>
+                    <option>Dinheiro</option>
+                    <option>Debito</option>
+                    <option>Transferencia</option>
+                  </optgroup>
+                  <optgroup label="Credito">
+                    <option>Cartao 1x</option>
+                    <option>Cartao 2x</option>
+                    <option>Cartao 3x</option>
+                    <option>Cartao 5x</option>
+                    <option>Cartao 10x</option>
+                    <option>Cartao outro</option>
+                  </optgroup>
+                  <optgroup label="Prazo / faturado">
+                    <option>Boleto 7 dias</option>
+                    <option>Boleto 15 dias</option>
+                    <option>Boleto 28 dias</option>
+                    <option>Boleto 30 dias</option>
+                    <option>Transferencia futura</option>
+                    <option>Conta corrente parceiro</option>
+                    <option>Personalizado</option>
+                  </optgroup>
+                  <optgroup label="Creditos">
+                    <option>Cashback</option>
+                    <option>Saldo cliente</option>
+                    <option>Vale</option>
+                    <option>Credito interno</option>
+                  </optgroup>
+                  <optgroup label="Pagamento misto">
+                    <option>Cashback + Pix</option>
+                    <option>Pix + cartao</option>
+                    <option>Cashback + saldo</option>
+                    <option>Cartao + boleto</option>
+                    <option>Misto personalizado</option>
+                  </optgroup>
+                </select>
+              </label>
               <label>Cashback usado (R$) <input name="cashbackUsed" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Valor pago agora <input name="paidNow" type="number" min="0" step="0.01" value="0" /></label>
+              <label>Vencimento saldo <input name="dueDate" type="date" /></label>
+              <label>Forma pagamento saldo <input name="balancePayment" placeholder="Pix futuro, boleto, conta corrente..." /></label>
+              <label>Taxa maquininha (%) <input name="cardFee" type="number" min="0" step="0.01" value="0" /></label>
               <div id="cashbackBalanceInfo" class="calc-card compact-info">Selecione um vendedor/cliente para ver saldo de cashback.</div>
               <label>Canal de venda
                 <select name="channel">
@@ -370,6 +418,31 @@
             </div>
             <div id="salesList" class="inventory-list"></div>
           </section>
+        </div>
+      </section>
+
+      <section id="contasReceber" class="view">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Contas a receber</h2>
+            <span id="receivablesCount"></span>
+          </div>
+          <div class="dashboard-filters">
+            <label>Cliente <input id="receivableClientFilter" placeholder="Cliente ou parceiro" /></label>
+            <label>Status
+              <select id="receivableStatusFilter">
+                <option value="">Todos</option>
+                <option>Em aberto</option>
+                <option>Parcial</option>
+                <option>Pago</option>
+                <option>Vencido</option>
+              </select>
+            </label>
+            <label>Data inicial <input id="receivableStartFilter" type="date" /></label>
+            <label>Data final <input id="receivableEndFilter" type="date" /></label>
+          </div>
+          <div id="receivablesDashboard" class="dashboard-content"></div>
+          <div id="receivablesList" class="inventory-list"></div>
         </div>
       </section>
 
@@ -579,6 +652,10 @@
           <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" /></label>
           <label>Forma de pagamento <input name="payment" placeholder="Pix, dinheiro, cartao..." /></label>
           <label>Cashback usado (R$) <input name="cashbackUsed" type="number" min="0" step="0.01" /></label>
+          <label>Valor pago agora <input name="paidNow" type="number" min="0" step="0.01" /></label>
+          <label>Vencimento saldo <input name="dueDate" type="date" /></label>
+          <label>Forma pagamento saldo <input name="balancePayment" /></label>
+          <label>Taxa maquininha (%) <input name="cardFee" type="number" min="0" step="0.01" /></label>
           <label>Canal de venda
             <select name="channel">
               <option>OLX</option>
@@ -629,6 +706,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260520-1115"></script>
+    <script src="app.js?v=20260520-1210"></script>
   </body>
 </html>
