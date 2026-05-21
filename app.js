@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1230";
+const APP_VERSION = "20260520-1245";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -882,6 +882,11 @@ function salePaymentSummary(sale) {
   const balance = Math.max(0, value - paidTotal);
   const status = balance <= 0 ? "Paga" : paidTotal > 0 ? "Parcialmente paga" : "Pendente";
   return { value, cashback, paidNow, paidTotal, balance, status };
+}
+
+function isDeferredPayment(payment = "") {
+  const text = String(payment).toLowerCase();
+  return ["boleto", "futura", "prazo", "faturado", "conta corrente", "personalizado"].some(term => text.includes(term));
 }
 
 function upsertReceivableFromSale(sale) {
@@ -2519,11 +2524,15 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   const soldQuantityTotal = sum(saleCart, line => line.soldQuantity);
   const cashbackAccount = registeredCustomer.type === "Vendedor" ? registeredCustomer.name : data.seller;
   const cashbackUsed = num(data.cashbackUsed);
-  const paidNow = num(data.paidNow);
+  let paidNow = num(data.paidNow);
   const cardFee = num(data.cardFee);
   if (cashbackUsed > soldTotal) return toast("Cashback nao pode ser maior que o valor da venda");
   const sellerBalance = getSellerCashbackBalance(cashbackAccount);
   if (cashbackUsed > 0 && cashbackUsed > sellerBalance) return toast("Cashback usado maior que o saldo do vendedor");
+  if (!paidNow && String(data.payment || "").trim() && !isDeferredPayment(data.payment)) {
+    paidNow = Math.max(0, soldTotal - cashbackUsed);
+    data.paidNow = paidNow;
+  }
   const paymentTotal = cashbackUsed + paidNow;
   const balanceOpen = Math.max(0, soldTotal - paymentTotal);
   if (paymentTotal > soldTotal) return toast("Pagamento + cashback maior que o valor da venda");
@@ -2712,7 +2721,11 @@ async function saveSaleEdit(form) {
   }
   const generatesCashback = !(registeredCustomer.type === "Vendedor" && cashbackUsed > 0);
   const cashbackValue = generatesCashback ? num(data.soldValue) * (num(data.cashbackPercent) / 100) : 0;
-  const paidNow = num(data.paidNow);
+  let paidNow = num(data.paidNow);
+  if (!paidNow && String(data.payment || "").trim() && !isDeferredPayment(data.payment)) {
+    paidNow = Math.max(0, num(data.soldValue) - cashbackUsed);
+    data.paidNow = paidNow;
+  }
   const balanceOpen = Math.max(0, num(data.soldValue) - cashbackUsed - paidNow);
   if (cashbackUsed > num(data.soldValue)) return toast("Cashback nao pode ser maior que o valor da venda");
   if (cashbackUsed + paidNow > num(data.soldValue)) return toast("Pagamento + cashback maior que o valor da venda");
