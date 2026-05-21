@@ -1,13 +1,13 @@
 ﻿const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const today = new Date().toISOString().slice(0, 10);
-const DB_KEY = "uniglobal-stock-ai-v1";
+const DB_KEY = "uniglobal-stock-ai-v2";
 const AUTH_KEY = "uniglobal-stock-ai-user";
 const OPENAI_KEY = "uniglobal-stock-ai-openai-key";
 const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
-const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1325";
+const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "saleSequence", "cloudUpdatedAt"];
+const APP_VERSION = "20260520-1410";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -15,7 +15,7 @@ const DEFAULT_USERS = [
 ];
 
 if (new URLSearchParams(location.search).get("reset") === "all") {
-  const blank = { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users: DEFAULT_USERS, sequence: 1 };
+  const blank = { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users: DEFAULT_USERS, sequence: 1, saleSequence: 1 };
   localStorage.setItem(DB_KEY, JSON.stringify(blank));
   sessionStorage.removeItem(AUTH_KEY);
 }
@@ -55,7 +55,7 @@ function activeKey() {
 }
 
 function blankState(users = DEFAULT_USERS) {
-  return { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users, sequence: 1 };
+  return { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users, sequence: 1, saleSequence: 1 };
 }
 
 function load() {
@@ -71,6 +71,7 @@ function migrate(data) {
   data.receivables ||= [];
   data.contacts ||= [];
   data.sequence ||= 1;
+  data.saleSequence ||= 1;
   data.cloudUpdatedAt ||= "";
   data.users = Array.isArray(data.users) && data.users.length ? data.users : DEFAULT_USERS;
   data.items.forEach(item => stampCreate(item));
@@ -156,9 +157,12 @@ async function loadCloudState() {
   try {
     const nextCloudState = await readCloudParts();
     if (stateHasBusinessData(nextCloudState) || stateTime(nextCloudState)) {
-      const cloudIsNewer = stateTime(nextCloudState) > stateTime(state);
+      const cloudIsNewer = stateTime(nextCloudState) >= stateTime(state);
       const localIsNewer = stateTime(localState) > stateTime(nextCloudState);
-      if (localIsNewer && stateHasBusinessData(localState)) {
+      const cloudHasResetSnapshot = !!stateTime(nextCloudState) && !stateHasBusinessData(nextCloudState);
+      if (cloudHasResetSnapshot && cloudIsNewer) {
+        applyCloudState(nextCloudState);
+      } else if (localIsNewer && stateHasBusinessData(localState)) {
         applyCloudState(localState);
         await saveCloudStateNow();
       } else if ((stateHasBusinessData(nextCloudState) && cloudIsNewer) || !stateHasBusinessData(state)) {
@@ -172,8 +176,9 @@ async function loadCloudState() {
     const rows = await supabaseRequest(`app_settings?id=eq.${encodeURIComponent(CLOUD_STATE_ID)}&select=value`);
     if (rows?.[0]?.value) {
       const cloudState = migrate(rows[0].value);
-      const cloudIsNewer = stateTime(cloudState) > stateTime(state);
-      if ((stateHasBusinessData(cloudState) && cloudIsNewer) || !stateHasBusinessData(state)) {
+      const cloudIsNewer = stateTime(cloudState) >= stateTime(state);
+      const cloudHasResetSnapshot = !!stateTime(cloudState) && !stateHasBusinessData(cloudState);
+      if ((cloudHasResetSnapshot && cloudIsNewer) || (stateHasBusinessData(cloudState) && cloudIsNewer) || !stateHasBusinessData(state)) {
         applyCloudState(cloudState);
       } else {
         await saveCloudStateNow();
@@ -292,6 +297,14 @@ function allowedViews() {
 
 function code() {
   return `UNI-${String(state.sequence).padStart(4, "0")}`;
+}
+
+function saleCode() {
+  return `VEN-${String(state.saleSequence).padStart(4, "0")}`;
+}
+
+function displaySaleCode(sale) {
+  return sale.saleCode || sale.number || "Venda";
 }
 
 function num(value) {
@@ -1181,7 +1194,7 @@ function openDashboardDrill(type) {
   document.querySelector("#dashboardDrillBody").innerHTML = sales.length ? sales.map(sale => {
     const item = saleProduct(sale);
     return `<article class="calc-card clickable-row" data-open-sale="${sale.id}">
-      <strong>${escapeHtml(item.code || "Venda")} Â· ${escapeHtml(item.name || "Produto")}</strong>
+      <strong>${escapeHtml(displaySaleCode(sale))} - ${escapeHtml(item.code || "Produto")} Â· ${escapeHtml(item.name || "Produto")}</strong>
       <p>${escapeHtml(sale.soldAt || "-")} Â· ${escapeHtml(sale.customer || "sem cliente")} Â· ${money.format(num(sale.soldValue))}</p>
       <p>Status: ${escapeHtml(sale.status || "concluida")} Â· Lucro: ${money.format(num(sale.profit))}</p>
     </article>`;
@@ -1414,7 +1427,7 @@ function renderInvoiceOptions() {
   select.innerHTML = state.sales.length
     ? state.sales.map(sale => {
       const item = state.items.find(i => i.id === sale.itemId);
-      return `<option value="${sale.id}">${escapeHtml(item?.code || "Venda")} Â· ${escapeHtml(item?.name || sale.customer || "Cliente")} Â· ${money.format(num(sale.soldValue))}</option>`;
+      return `<option value="${sale.id}">${escapeHtml(displaySaleCode(sale))} - ${escapeHtml(item?.code || "Produto")} Â· ${escapeHtml(item?.name || sale.customer || "Cliente")} Â· ${money.format(num(sale.soldValue))}</option>`;
     }).join("")
     : `<option value="">Nenhuma venda registrada</option>`;
 }
@@ -1440,7 +1453,7 @@ function renderSalesList() {
     const measure = lines.length > 1 ? `${lines.length} itens` : (num(sale.soldWeight) ? `${num(sale.soldWeight)} kg` : `${num(sale.soldQuantity) || 1} un.`);
     const closed = sale.status === "cancelada" || sale.status === "estornada";
     return `<article class="calc-card clickable-row" data-open-sale="${sale.id}">
-      <strong>${escapeHtml(item.code || "Venda")} Â· ${escapeHtml(item.name || "Produto")}</strong>
+      <strong>${escapeHtml(displaySaleCode(sale))} - ${escapeHtml(item.code || "Produto")} Â· ${escapeHtml(lines.length > 1 ? `Venda com ${lines.length} itens` : item.name || "Produto")}</strong>
       <p>${escapeHtml(sale.soldAt)} Â· ${escapeHtml(sale.customer || "sem cliente")} Â· ${measure} Â· ${money.format(num(sale.soldValue))}</p>
       <p>Status: ${escapeHtml(sale.status || "concluida")} Â· Vendedor: ${escapeHtml(sale.seller || "-")} Â· Cashback: ${money.format(num(sale.cashbackValue))}</p>
       ${sale.cashbackBlockedReason ? `<p>${escapeHtml(sale.cashbackBlockedReason)}</p>` : ""}
@@ -1659,8 +1672,9 @@ function openSale(id) {
   const { sale, item, invoice, measure } = details;
   const lines = saleLineItems(sale);
   const itemsText = lines.map(line => `${line.code || ""} - ${line.name || "Produto"} (${line.soldWeight ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity) || 1} un.`}) - ${money.format(num(line.soldValue))}`).join("\n");
-  document.querySelector("#saleDialogTitle").textContent = `${item.code || "Venda"} - ${lines.length > 1 ? `Venda com ${lines.length} itens` : item.name || "Produto"}`;
+  document.querySelector("#saleDialogTitle").textContent = `${displaySaleCode(sale)} - ${item.code || "Produto"} - ${lines.length > 1 ? `Venda com ${lines.length} itens` : item.name || "Produto"}`;
   document.querySelector("#saleDialogBody").innerHTML = [
+    ["Numero da venda", displaySaleCode(sale)],
     ["Status", sale.status || "concluida"],
     ["Produto", lines.length > 1 ? `${lines.length} itens na venda` : item.name],
     ["Itens", itemsText],
@@ -1704,13 +1718,14 @@ function printSale(id) {
   const { sale, item, invoice, measure } = details;
   const lines = saleLineItems(sale);
   const linesHtml = lines.map(line => `<tr><td>${escapeHtml(line.code || "")}</td><td>${escapeHtml(line.name || "Produto")}</td><td>${line.soldWeight ? `${num(line.soldWeight)} kg` : `${num(line.soldQuantity) || 1} un.`}</td><td>${money.format(num(line.soldValue))}</td></tr>`).join("");
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Venda ${item.code || ""}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${displaySaleCode(sale)} - ${item.code || ""}</title>
     <style>body{font-family:Arial,sans-serif;padding:28px;color:#111}h1{margin:0 0 6px}table{width:100%;border-collapse:collapse;margin-top:20px}td,th{border:1px solid #ddd;padding:10px;text-align:left}.brand{color:#b88723;font-weight:700}.status{font-weight:700}</style>
     </head><body>
     <div class="brand">UNIGLOBAL STOCK AI</div>
     <h1>Comprovante de venda</h1>
     <p class="status">Status: ${escapeHtml(sale.status || "concluida")}</p>
     <table><tbody>
+      <tr><th>Numero da venda</th><td>${escapeHtml(displaySaleCode(sale))}</td></tr>
       <tr><th>Produto</th><td>${escapeHtml(item.code || "")} Â· ${escapeHtml(item.name || "")}</td></tr>
       <tr><th>EAN</th><td>${escapeHtml(item.ean || "-")}</td></tr>
       <tr><th>Cliente</th><td>${escapeHtml(sale.customer || "-")}</td></tr>
@@ -2555,6 +2570,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   if (editingSaleId) return toast("Use a janela de edicao da venda para alterar registros existentes");
   const sale = {
     id: crypto.randomUUID(),
+    saleCode: saleCode(),
     ...data,
     itemId: saleCart[0]?.itemId,
     items: saleCart.map(line => ({ ...line })),
@@ -2575,6 +2591,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   };
   stampCreate(sale);
   state.sales.unshift(sale);
+  state.saleSequence += 1;
   saleCart.forEach(line => {
     const item = state.items.find(product => product.id === line.itemId);
     if (!item) return;
