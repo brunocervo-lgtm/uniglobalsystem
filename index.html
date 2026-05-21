@@ -307,7 +307,7 @@
 
       <section id="venda" class="view">
         <div class="content-grid">
-          <form id="saleForm" class="panel form-panel slim">
+          <form id="saleForm" class="panel form-panel slim" novalidate>
             <div class="panel-head">
               <h2>Registrar venda</h2>
               <span>Venda total ou parcial</span>
@@ -323,7 +323,7 @@
                 </div>
               </label>
               <label id="unitSaleLabel">Valor por unidade/kg <input name="unitSaleValue" type="number" min="0" step="0.01" /></label>
-              <label>Valor total vendido <input name="soldValue" type="number" min="0" step="0.01" required /></label>
+              <label>Valor total vendido <input name="soldValue" type="number" min="0" step="0.01" /></label>
               <label>Cliente
                 <input name="customer" list="customerOptions" placeholder="Selecione ou digite o cliente" />
                 <datalist id="customerOptions"></datalist>
@@ -707,6 +707,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260520-1305"></script>
+    <script src="app.js?v=20260520-1325"></script>
   </body>
 </html>

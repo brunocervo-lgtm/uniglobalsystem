@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
 const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1305";
+const APP_VERSION = "20260520-1325";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -2515,6 +2515,7 @@ document.querySelector("#saleForm").addEventListener("submit", async (e) => {
   }
   try {
   const data = Object.fromEntries(new FormData(e.target).entries());
+  data.soldAt ||= today;
   if (!saleCart.length) {
     const line = currentSaleLineFromForm();
     if (!line) return toast("Selecione o item da venda");
