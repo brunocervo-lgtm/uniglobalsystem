@@ -6,8 +6,8 @@ const OPENAI_KEY = "uniglobal-stock-ai-openai-key";
 const SUPABASE_URL = "https://favsnuzncijpiwyewdli.supabase.co";
 const SUPABASE_KEY = "sb_publishable_OP0CD--P7EQSuDU6_BvEog_eglwjiJv";
 const CLOUD_STATE_ID = "state";
-const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "sequence", "saleSequence", "cloudUpdatedAt"];
-const APP_VERSION = "20260520-1410";
+const CLOUD_PARTS = ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "users", "purchaseDeclarations", "sequence", "saleSequence", "declarationSequence", "cloudUpdatedAt"];
+const APP_VERSION = "20260525-1015";
 
 const DEFAULT_USERS = [
   { id: "default-admin", username: "admin", password: "uniglobal123", role: "admin" },
@@ -15,7 +15,7 @@ const DEFAULT_USERS = [
 ];
 
 if (new URLSearchParams(location.search).get("reset") === "all") {
-  const blank = { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users: DEFAULT_USERS, sequence: 1, saleSequence: 1 };
+  const blank = { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], purchaseDeclarations: [], users: DEFAULT_USERS, sequence: 1, saleSequence: 1, declarationSequence: 1 };
   localStorage.setItem(DB_KEY, JSON.stringify(blank));
   sessionStorage.removeItem(AUTH_KEY);
 }
@@ -28,6 +28,7 @@ const views = {
   vendedores: "Vendedores",
   alerta: "Alerta",
   sucata: "Sucata por peso",
+  declaracaoCompra: "Declaracao de Compra",
   venda: "Saida / Venda",
   contasReceber: "Contas a receber",
   inventarioVendas: "Inventario de produtos",
@@ -35,7 +36,7 @@ const views = {
   configuracao: "Configuracao"
 };
 
-const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "venda", "contasReceber", "inventarioVendas", "relatorios", "configuracao"];
+const adminViews = ["dashboard", "estoque", "cadastro", "contatos", "vendedores", "alerta", "sucata", "declaracaoCompra", "venda", "contasReceber", "inventarioVendas", "relatorios", "configuracao"];
 const collaboratorViews = ["cadastro"];
 const state = migrate(load());
 let activeProduct = null;
@@ -46,6 +47,7 @@ let activeSaleId = "";
 let activeDashboardTab = "principal";
 let activeReportTab = "principal";
 let editingSaleId = "";
+let editingDeclarationId = "";
 let cloudSaveTimer = null;
 let cloudLastError = "";
 let saleCart = [];
@@ -55,7 +57,7 @@ function activeKey() {
 }
 
 function blankState(users = DEFAULT_USERS) {
-  return { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], users, sequence: 1, saleSequence: 1 };
+  return { items: [], pendingItems: [], sales: [], invoices: [], receivables: [], contacts: [], purchaseDeclarations: [], users, sequence: 1, saleSequence: 1, declarationSequence: 1 };
 }
 
 function load() {
@@ -70,8 +72,10 @@ function migrate(data) {
   data.invoices ||= [];
   data.receivables ||= [];
   data.contacts ||= [];
+  data.purchaseDeclarations ||= [];
   data.sequence ||= 1;
   data.saleSequence ||= 1;
+  data.declarationSequence ||= 1;
   data.cloudUpdatedAt ||= "";
   data.users = Array.isArray(data.users) && data.users.length ? data.users : DEFAULT_USERS;
   data.items.forEach(item => stampCreate(item));
@@ -80,6 +84,7 @@ function migrate(data) {
   data.invoices.forEach(invoice => stampCreate(invoice));
   data.receivables.forEach(receivable => stampCreate(receivable));
   data.contacts.forEach(contact => stampCreate(contact));
+  data.purchaseDeclarations.forEach(declaration => stampCreate(declaration));
   data.users.forEach(user => stampCreate(user));
   return data;
 }
@@ -122,7 +127,7 @@ function applyCloudState(data) {
 }
 
 function stateHasBusinessData(data = state) {
-  return ["items", "pendingItems", "sales", "invoices", "receivables", "contacts"].some(key => Array.isArray(data[key]) && data[key].length);
+  return ["items", "pendingItems", "sales", "invoices", "receivables", "contacts", "purchaseDeclarations"].some(key => Array.isArray(data[key]) && data[key].length);
 }
 
 function stateTime(data = {}) {
@@ -231,7 +236,7 @@ function updateCloudStatus(message) {
 }
 
 function cloudStateSummary(data = state) {
-  return `${data.items.length} produtos, ${data.pendingItems.length} pendentes, ${data.contacts.length} cadastros, ${data.sales.length} vendas, ${data.receivables?.length || 0} contas`;
+  return `${data.items.length} produtos, ${data.pendingItems.length} pendentes, ${data.contacts.length} cadastros, ${data.sales.length} vendas, ${data.receivables?.length || 0} contas, ${data.purchaseDeclarations?.length || 0} declaracoes`;
 }
 
 async function syncCloudNow(showToast = true) {
@@ -301,6 +306,10 @@ function code() {
 
 function saleCode() {
   return `VEN-${String(state.saleSequence).padStart(4, "0")}`;
+}
+
+function declarationCode() {
+  return `DC-${String(state.declarationSequence).padStart(6, "0")}`;
 }
 
 function displaySaleCode(sale) {
@@ -1392,6 +1401,7 @@ function renderCustomerOptions() {
   list.innerHTML = customers.map(contact => `<option value="${escapeHtml(contact.name)}">${escapeHtml(contact.document || contact.phone || contact.email || "")}</option>`).join("");
   renderSupplierOptions();
   renderSellerOptions();
+  renderPurchaseDeclarationOptions();
 }
 
 function isCustomerContact(contact) {
@@ -1412,6 +1422,26 @@ function renderSupplierOptions() {
   if (!list) return;
   const suppliers = state.contacts.filter(contact => contact.type === "Fornecedor" || contact.type === "Cliente e fornecedor");
   list.innerHTML = suppliers.map(contact => `<option value="${escapeHtml(contact.name)}">${escapeHtml(contact.document || contact.phone || contact.email || "")}</option>`).join("");
+}
+
+function isSupplierContact(contact) {
+  return ["Fornecedor", "Cliente e fornecedor", "Parceiro recorrente", "Interno", "Vendedor"].includes(contact?.type);
+}
+
+function renderPurchaseDeclarationOptions() {
+  const supplierSelect = document.querySelector("#declarationSupplierSelect");
+  if (supplierSelect) {
+    const current = supplierSelect.value;
+    const suppliers = state.contacts.filter(isSupplierContact);
+    supplierSelect.innerHTML = `<option value="">Selecione o fornecedor</option>${suppliers.map(contact => `<option value="${contact.id}">${escapeHtml(contact.name)} - ${escapeHtml(contact.document || contact.phone || "sem documento")}</option>`).join("")}`;
+    supplierSelect.value = current;
+  }
+  const itemSelect = document.querySelector("#declarationPurchaseItem");
+  if (itemSelect) {
+    const current = itemSelect.value;
+    itemSelect.innerHTML = `<option value="">Criar nova compra pela declaração</option>${state.items.map(item => `<option value="${item.id}">${escapeHtml(item.code)} - ${escapeHtml(item.name || "Produto")} - ${escapeHtml(item.supplier || "sem fornecedor")}</option>`).join("")}`;
+    itemSelect.value = current;
+  }
 }
 
 function renderSellerOptions() {
@@ -2016,6 +2046,209 @@ function getSellerCashbackBalance(name) {
   return generated - used;
 }
 
+async function filesToDataUrls(fileList, limit = 6) {
+  const files = Array.from(fileList || []).slice(0, limit);
+  const urls = [];
+  for (const file of files) {
+    urls.push({ name: file.name, type: file.type, dataUrl: await fileToDataURL(file) });
+  }
+  return urls;
+}
+
+function activePurchaseDeclarations() {
+  return [...(state.purchaseDeclarations || [])].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+}
+
+function declarationStockCategory(category = "") {
+  const text = category.toLowerCase();
+  if (text.includes("sucata") || text.includes("metal") || text.includes("eletr")) return "Sucata";
+  if (text.includes("peça") || text.includes("peca")) return "Peça usada";
+  return "Produto de revenda";
+}
+
+function declarationPaymentProofLabel(declaration) {
+  return declaration.paymentProof?.dataUrl
+    ? `<a href="${declaration.paymentProof.dataUrl}" target="_blank" rel="noreferrer">${escapeHtml(declaration.paymentProof.name || "Abrir comprovante")}</a>`
+    : "Sem comprovante";
+}
+
+function declarationSignedLabel(declaration) {
+  return declaration.signedDocument?.dataUrl
+    ? `<a href="${declaration.signedDocument.dataUrl}" target="_blank" rel="noreferrer">${escapeHtml(declaration.signedDocument.name || "Abrir documento assinado")}</a>`
+    : "Nao anexado";
+}
+
+function renderPurchaseDeclarations() {
+  renderPurchaseDeclarationOptions();
+  const form = document.querySelector("#purchaseDeclarationForm");
+  const codeLabel = document.querySelector("#nextDeclarationCode");
+  if (codeLabel) codeLabel.textContent = editingDeclarationId ? "Editando declaração" : `Próximo número: ${declarationCode()}`;
+  if (form && !form.purchaseDate.value) form.purchaseDate.value = today;
+
+  const list = document.querySelector("#purchaseDeclarationList");
+  if (!list) return;
+  const query = document.querySelector("#declarationSearch")?.value.trim().toLowerCase() || "";
+  const status = document.querySelector("#declarationStatusFilter")?.value || "";
+  const category = document.querySelector("#declarationCategoryFilter")?.value || "";
+  const date = document.querySelector("#declarationDateFilter")?.value || "";
+  const rows = activePurchaseDeclarations().filter(declaration => {
+    const text = `${declaration.code} ${declaration.supplierName} ${declaration.supplierDocument} ${declaration.description} ${declaration.category}`.toLowerCase();
+    return (!query || text.includes(query))
+      && (!status || declaration.status === status)
+      && (!category || declaration.category === category)
+      && (!date || declaration.purchaseDate === date);
+  });
+  document.querySelector("#purchaseDeclarationsCount").textContent = `${rows.length} de ${(state.purchaseDeclarations || []).length} declarações`;
+  list.innerHTML = rows.length ? rows.map(declaration => {
+    const item = state.items.find(product => product.id === declaration.purchaseItemId);
+    return `<article class="item-row declaration-row">
+      <button class="thumb-button" type="button" data-edit-declaration="${declaration.id}">${declaration.materialPhotos?.[0]?.dataUrl ? `<img class="stock-photo" src="${declaration.materialPhotos[0].dataUrl}" alt="" />` : `<div class="thumb-placeholder">DC</div>`}</button>
+      <div>
+        <strong>${escapeHtml(declaration.code)} · ${escapeHtml(declaration.supplierName || "Fornecedor")}</strong>
+        <span>${escapeHtml(declaration.purchaseDate || "-")} · ${escapeHtml(declaration.category || "-")} · ${money.format(num(declaration.paidValue))}</span>
+        <span>${escapeHtml(item ? `${item.code} - ${item.name}` : "Compra criada pela declaração")} · ${escapeHtml(auditLine(declaration))}</span>
+      </div>
+      <div class="row-actions">
+        <span class="pill">${escapeHtml(declaration.status || "Rascunho")}</span>
+        <button class="secondary-btn small-btn" data-edit-declaration="${declaration.id}" type="button">Editar</button>
+        <button class="secondary-btn small-btn" data-print-declaration="${declaration.id}" type="button">PDF</button>
+      </div>
+    </article>`;
+  }).join("") : `<div class="empty">Nenhuma declaração encontrada.</div>`;
+  list.querySelectorAll("[data-edit-declaration]").forEach(button => {
+    button.addEventListener("click", () => editPurchaseDeclaration(button.dataset.editDeclaration));
+  });
+  list.querySelectorAll("[data-print-declaration]").forEach(button => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      printPurchaseDeclaration(button.dataset.printDeclaration);
+    });
+  });
+}
+
+function fillDeclarationSupplier(contactId) {
+  const contact = state.contacts.find(item => item.id === contactId);
+  const form = document.querySelector("#purchaseDeclarationForm");
+  if (!contact || !form) return;
+  form.supplierName.value = contact.name || "";
+  form.supplierDocument.value = contact.document || "";
+  form.supplierRgIe.value = contact.rgIe || "";
+  form.supplierAddress.value = contact.address || "";
+  form.supplierPhone.value = contact.phone || "";
+  form.supplierEmail.value = contact.email || "";
+  form.supplierPix.value = contact.pixKey || "";
+}
+
+function resetPurchaseDeclarationForm() {
+  const form = document.querySelector("#purchaseDeclarationForm");
+  if (!form) return;
+  editingDeclarationId = "";
+  form.reset();
+  form.purchaseDate.value = today;
+  form.status.value = "Rascunho";
+  document.querySelector("#declarationPreview").innerHTML = "";
+  renderPurchaseDeclarations();
+  form.supplierId.focus();
+}
+
+function buildDeclarationStockItem(declaration) {
+  const category = declarationStockCategory(declaration.category);
+  const item = {
+    id: crypto.randomUUID(),
+    code: code(),
+    ean: "",
+    name: declaration.description?.split("\n")[0]?.slice(0, 80) || `Compra ${declaration.code}`,
+    category,
+    subcategory: declaration.category,
+    brand: "",
+    model: "",
+    quantity: num(declaration.quantity) || 1,
+    weight: num(declaration.weight),
+    condition: category === "Sucata" ? "sucata" : "usado",
+    paidValue: num(declaration.paidValue),
+    marketValue: 0,
+    suggestedValue: 0,
+    saleValue: 0,
+    supplier: declaration.supplierName,
+    purchaseInvoice: declaration.code,
+    purchaseDate: declaration.purchaseDate,
+    purchaseInvoiceKey: "Declaração de Compra",
+    location: "",
+    entryDate: declaration.purchaseDate || today,
+    status: "em estoque",
+    notes: [declaration.notes, `Rastreabilidade: declaração ${declaration.code}`].filter(Boolean).join("\n"),
+    photo: declaration.materialPhotos?.[0]?.dataUrl || "",
+    validationStatus: "approved",
+    purchaseDeclarationId: declaration.id
+  };
+  stampCreate(item);
+  return item;
+}
+
+function linkDeclarationToStock(declaration) {
+  let item = state.items.find(product => product.id === declaration.purchaseItemId);
+  if (!item) {
+    item = buildDeclarationStockItem(declaration);
+    state.items.unshift(item);
+    state.sequence += 1;
+    declaration.purchaseItemId = item.id;
+  } else {
+    item.purchaseDeclarationId = declaration.id;
+    item.supplier = item.supplier || declaration.supplierName;
+    item.purchaseDate = item.purchaseDate || declaration.purchaseDate;
+    item.purchaseInvoice = item.purchaseInvoice || declaration.code;
+    item.purchaseInvoiceKey = item.purchaseInvoiceKey || "Declaração de Compra";
+    if (!item.photo && declaration.materialPhotos?.[0]?.dataUrl) item.photo = declaration.materialPhotos[0].dataUrl;
+    stampUpdate(item);
+  }
+}
+
+function editPurchaseDeclaration(id) {
+  const declaration = state.purchaseDeclarations.find(item => item.id === id);
+  const form = document.querySelector("#purchaseDeclarationForm");
+  if (!declaration || !form) return;
+  editingDeclarationId = id;
+  renderPurchaseDeclarationOptions();
+  ["purchaseItemId", "supplierId", "status", "purchaseDate", "supplierName", "supplierDocument", "supplierRgIe", "supplierPhone", "supplierEmail", "supplierPix", "supplierAddress", "description", "category", "quantity", "weight", "paidValue", "paymentMethod", "notes"].forEach(field => {
+    if (form.elements[field]) form.elements[field].value = declaration[field] ?? "";
+  });
+  document.querySelector("#declarationPreview").innerHTML = `<strong>${escapeHtml(declaration.code)}</strong><span>${declaration.materialPhotos?.length || 0} foto(s) vinculada(s) · ${declarationSignedLabel(declaration)}</span>`;
+  switchView("declaracaoCompra");
+  form.supplierName.focus();
+}
+
+function legalOriginText(declaration) {
+  return `Eu, ${declaration.supplierName || "[NOME DO VENDEDOR]"}, inscrito(a) no CPF/CNPJ nº ${declaration.supplierDocument || "[CPF/CNPJ]"}, declaro ser proprietário(a) dos materiais descritos nesta declaração, afirmando que os bens vendidos possuem origem lícita, não sendo provenientes de furto, roubo, apropriação indevida ou qualquer outra prática ilícita. Declaro, ainda, que realizo a venda de forma livre e espontânea para UNIGLOBAL Solutions, recebendo o valor acordado pelas partes.`;
+}
+
+function declarationPdfHtml(declaration) {
+  const logo = document.querySelector(".brand-logo")?.src || "";
+  const photos = (declaration.materialPhotos || []).map(photo => `<figure><img src="${photo.dataUrl}" alt="" /><figcaption>${escapeHtml(photo.name || "Foto do material")}</figcaption></figure>`).join("");
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${escapeHtml(declaration.code)}</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Arial,sans-serif;color:#111;margin:28px;line-height:1.45} header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;border-bottom:2px solid #c89b2c;padding-bottom:16px;margin-bottom:18px} img.logo{width:110px;height:auto} h1{font-size:22px;margin:0 0 6px} h2{font-size:15px;margin:22px 0 8px;border-bottom:1px solid #ddd;padding-bottom:5px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}.box{border:1px solid #ddd;border-radius:8px;padding:12px;margin:12px 0}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:55px}.signature{border-top:1px solid #111;text-align:center;padding-top:8px}.photos{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;page-break-before:always}.photos img{width:100%;max-height:260px;object-fit:cover;border:1px solid #ddd;border-radius:8px} .muted{color:#555;font-size:12px}@media print{button{display:none}.photos{page-break-before:always}}
+  </style></head><body>
+  <header><div>${logo ? `<img class="logo" src="${logo}" alt="UNIGLOBAL">` : ""}<h1>Declaração de Compra</h1><div class="muted">Documento interno de rastreabilidade</div></div><div><strong>${escapeHtml(declaration.code)}</strong><br>Data: ${escapeHtml(declaration.purchaseDate || "-")}<br>Status: ${escapeHtml(declaration.status || "-")}</div></header>
+  <section class="grid"><div><h2>Fornecedor / vendedor</h2><p><strong>${escapeHtml(declaration.supplierName || "-")}</strong><br>CPF/CNPJ: ${escapeHtml(declaration.supplierDocument || "-")}<br>RG/IE: ${escapeHtml(declaration.supplierRgIe || "-")}<br>Endereço: ${escapeHtml(declaration.supplierAddress || "-")}<br>Telefone: ${escapeHtml(declaration.supplierPhone || "-")}<br>E-mail: ${escapeHtml(declaration.supplierEmail || "-")}<br>Pix: ${escapeHtml(declaration.supplierPix || "-")}</p></div><div><h2>Empresa compradora</h2><p><strong>UNIGLOBAL Solutions</strong><br>Sistema: UNIGLOBAL STOCK AI<br>CNPJ: ___________________________<br>Endereço: _______________________</p></div></section>
+  <h2>Dados da compra</h2><div class="grid box"><div>Descrição: <strong>${escapeHtml(declaration.description || "-")}</strong></div><div>Categoria: <strong>${escapeHtml(declaration.category || "-")}</strong></div><div>Quantidade: <strong>${num(declaration.quantity)}</strong></div><div>Peso aproximado: <strong>${num(declaration.weight)} kg</strong></div><div>Valor pago: <strong>${money.format(num(declaration.paidValue))}</strong></div><div>Forma de pagamento: <strong>${escapeHtml(declaration.paymentMethod || "-")}</strong></div></div>
+  <h2>Declaração de origem lícita</h2><div class="box">${escapeHtml(legalOriginText(declaration))}</div>
+  <h2>Rastreabilidade</h2><div class="grid box"><div>Comprovante: ${declaration.paymentProof?.name ? escapeHtml(declaration.paymentProof.name) : "-"}</div><div>Documento assinado: ${declaration.signedDocument?.name ? escapeHtml(declaration.signedDocument.name) : "-"}</div><div>Criado por: ${escapeHtml(declaration.createdBy || "-")}</div><div>Criado em: ${declaration.createdAt ? new Date(declaration.createdAt).toLocaleString("pt-BR") : "-"}</div></div>
+  <div class="signatures"><div class="signature">${escapeHtml(declaration.supplierName || "Vendedor")}</div><div class="signature">UNIGLOBAL Solutions</div></div>
+  <h2>Fotos do material</h2><section class="photos">${photos || "<p>Sem fotos anexadas.</p>"}</section>
+  </body></html>`;
+}
+
+function printPurchaseDeclaration(id = editingDeclarationId) {
+  const declaration = state.purchaseDeclarations.find(item => item.id === id);
+  if (!declaration) return toast("Salve a declaração antes de gerar PDF");
+  const win = window.open("", "_blank");
+  if (!win) return toast("Permita pop-ups para imprimir o PDF");
+  win.document.write(declarationPdfHtml(declaration));
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
+}
+
 function saleCashbackAccount() {
   const form = document.querySelector("#saleForm");
   const customerAsSeller = state.contacts.find(contact => contact.type === "Vendedor" && contact.name.trim().toLowerCase() === form.customer.value.trim().toLowerCase());
@@ -2047,8 +2280,10 @@ function openContact(id) {
   document.querySelector("#contactDialogBody").innerHTML = [
     ["Tipo", contact.type],
     ["CPF / CNPJ", contact.document],
+    ["RG / IE", contact.rgIe],
     ["Telefone", contact.phone],
     ["E-mail", contact.email],
+    ["Chave Pix", contact.pixKey],
     ["Contato responsÃ¡vel", contact.contactPerson],
     ["EndereÃ§o", contact.address],
     ["Status", contact.status],
@@ -2067,7 +2302,7 @@ function editContact(id) {
   editingContactId = id;
   const form = document.querySelector("#contactForm");
   form.dataset.editingId = id;
-  ["type", "name", "document", "phone", "email", "contactPerson", "cashbackPercent", "address", "status", "notes"].forEach(field => {
+  ["type", "name", "document", "rgIe", "phone", "email", "pixKey", "contactPerson", "cashbackPercent", "address", "status", "notes"].forEach(field => {
     if (form.elements[field]) form.elements[field].value = contact[field] || "";
   });
   form.querySelector("button[type='submit']").textContent = "Salvar alteraÃ§Ãµes";
@@ -2112,6 +2347,7 @@ function render() {
   renderSalesList();
   renderSalesInventory();
   renderReceivables();
+  renderPurchaseDeclarations();
   renderReports();
   renderUsers();
   renderContacts();
@@ -2165,7 +2401,17 @@ function openProduct(id, source = "stock") {
   const invoiceLink = item.purchaseInvoiceFile
     ? `<a href="${item.purchaseInvoiceFile}" target="_blank" rel="noreferrer">${escapeHtml(item.purchaseInvoiceFileName || "Abrir NF anexada")}</a>`
     : "Sem anexo";
-  document.querySelector("#dialogPhoto").insertAdjacentHTML("beforeend", `<div class="trace-box"><strong>Rastreabilidade</strong><span>Fornecedor: ${escapeHtml(item.supplier || "-")}</span><span>NF: ${escapeHtml(item.purchaseInvoice || "-")}</span><span>Compra: ${escapeHtml(item.purchaseDate || "-")}</span><span>${escapeHtml(auditLine(item))}</span><span>${invoiceLink}</span></div>`);
+  const linkedDeclarations = (state.purchaseDeclarations || []).filter(declaration => declaration.purchaseItemId === item.id || declaration.id === item.purchaseDeclarationId);
+  const declarationTrace = linkedDeclarations.length
+    ? linkedDeclarations.map(declaration => `<button type="button" class="table-action" data-edit-declaration="${declaration.id}">${escapeHtml(declaration.code)} · ${escapeHtml(declaration.status || "Rascunho")} · ${declaration.materialPhotos?.length || 0} foto(s) · ${declaration.paymentProof ? "comprovante ok" : "sem comprovante"} · ${declaration.signedDocument ? "assinada" : "sem assinatura"}</button>`).join("")
+    : "Sem declaração vinculada";
+  document.querySelector("#dialogPhoto").insertAdjacentHTML("beforeend", `<div class="trace-box"><strong>Rastreabilidade</strong><span>Fornecedor: ${escapeHtml(item.supplier || "-")}</span><span>NF: ${escapeHtml(item.purchaseInvoice || "-")}</span><span>Compra: ${escapeHtml(item.purchaseDate || "-")}</span><span>${escapeHtml(auditLine(item))}</span><span>${invoiceLink}</span><span>Declaração: ${declarationTrace}</span></div>`);
+  document.querySelector("#dialogPhoto").querySelectorAll("[data-edit-declaration]").forEach(button => {
+    button.addEventListener("click", () => {
+      dialog.close();
+      editPurchaseDeclaration(button.dataset.editDeclaration);
+    });
+  });
   ["ean", "name", "category", "subcategory", "brand", "model", "quantity", "weight", "paidValue", "marketValue", "suggestedValue", "saleValue", "supplier", "purchaseInvoice", "purchaseDate", "purchaseInvoiceKey", "location", "status", "notes"].forEach(name => {
     if (form.elements[name]) form.elements[name].value = item[name] ?? "";
   });
@@ -2870,6 +3116,108 @@ document.querySelector("#userForm").addEventListener("submit", async (e) => {
   } finally {
     e.target.dataset.saving = "";
   }
+});
+
+document.querySelector("#purchaseDeclarationForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (e.target.dataset.saving === "true") return;
+  e.target.dataset.saving = "true";
+  try {
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const existing = editingDeclarationId ? state.purchaseDeclarations.find(item => item.id === editingDeclarationId) : null;
+    const newPhotos = await filesToDataUrls(e.target.materialPhotos.files, 6);
+    const materialPhotos = [...(existing?.materialPhotos || []), ...newPhotos].slice(0, 6);
+    if (!materialPhotos.length) return toast("Anexe pelo menos uma foto do material");
+
+    const paymentProofFile = e.target.paymentProof.files[0];
+    const signedDocumentFile = e.target.signedDocument.files[0];
+    const paymentProof = paymentProofFile
+      ? { name: paymentProofFile.name, type: paymentProofFile.type, dataUrl: await fileToDataURL(paymentProofFile) }
+      : existing?.paymentProof || null;
+    const signedDocument = signedDocumentFile
+      ? { name: signedDocumentFile.name, type: signedDocumentFile.type, dataUrl: await fileToDataURL(signedDocumentFile) }
+      : existing?.signedDocument || null;
+
+    const declarationData = {
+      purchaseItemId: data.purchaseItemId || "",
+      supplierId: data.supplierId || "",
+      supplierName: data.supplierName,
+      supplierDocument: data.supplierDocument,
+      supplierRgIe: data.supplierRgIe,
+      supplierAddress: data.supplierAddress,
+      supplierPhone: data.supplierPhone,
+      supplierEmail: data.supplierEmail,
+      supplierPix: data.supplierPix,
+      purchaseDate: data.purchaseDate || today,
+      description: data.description,
+      category: data.category,
+      quantity: num(data.quantity),
+      weight: num(data.weight),
+      paidValue: num(data.paidValue),
+      paymentMethod: data.paymentMethod,
+      paymentProof,
+      signedDocument,
+      materialPhotos,
+      notes: data.notes,
+      status: signedDocument ? "Assinada/anexada" : data.status || "Rascunho"
+    };
+
+    let declaration = existing;
+    if (declaration) {
+      Object.assign(declaration, declarationData);
+      stampUpdate(declaration);
+      toast(`${declaration.code} atualizada`);
+    } else {
+      declaration = stampCreate({ id: crypto.randomUUID(), code: declarationCode(), ...declarationData });
+      state.purchaseDeclarations.unshift(declaration);
+      state.declarationSequence += 1;
+      toast(`${declaration.code} salva`);
+    }
+    linkDeclarationToStock(declaration);
+    editingDeclarationId = declaration.id;
+    save({ skipRender: true });
+    await syncCloudNow(false);
+    renderAll();
+    document.querySelector("#declarationPreview").innerHTML = `<strong>${escapeHtml(declaration.code)}</strong><span>${materialPhotos.length} foto(s) · ${escapeHtml(declaration.status)}</span>`;
+  } finally {
+    e.target.dataset.saving = "";
+  }
+});
+
+document.querySelector("#declarationSupplierSelect")?.addEventListener("change", (e) => fillDeclarationSupplier(e.target.value));
+document.querySelector("#declarationPurchaseItem")?.addEventListener("change", (e) => {
+  const item = state.items.find(product => product.id === e.target.value);
+  const form = document.querySelector("#purchaseDeclarationForm");
+  if (!item || !form) return;
+  form.description.value ||= `${item.name || item.code}\n${item.notes || ""}`.trim();
+  form.category.value = item.category === "Sucata" ? "sucata" : item.category === "Peça usada" ? "peça usada" : "produto reaproveitado";
+  form.quantity.value ||= num(item.quantity);
+  form.weight.value ||= num(item.weight);
+  form.paidValue.value ||= num(item.paidValue);
+  form.purchaseDate.value ||= item.purchaseDate || item.entryDate || today;
+  const supplier = state.contacts.find(contact => contact.name === item.supplier);
+  if (supplier) {
+    form.supplierId.value = supplier.id;
+    fillDeclarationSupplier(supplier.id);
+  } else if (item.supplier) {
+    form.supplierName.value ||= item.supplier;
+  }
+});
+document.querySelector("#newPurchaseDeclarationBtn")?.addEventListener("click", resetPurchaseDeclarationForm);
+document.querySelector("#generateDeclarationPdfBtn")?.addEventListener("click", () => {
+  const declaration = state.purchaseDeclarations.find(item => item.id === editingDeclarationId);
+  if (!declaration) return toast("Salve a declaração antes de gerar PDF");
+  declaration.status = declaration.signedDocument ? "Assinada/anexada" : "PDF gerado";
+  declaration.pdfGeneratedAt = new Date().toISOString();
+  stampUpdate(declaration);
+  save();
+  toast("PDF gerado");
+  printPurchaseDeclaration(declaration.id);
+});
+document.querySelector("#printDeclarationPdfBtn")?.addEventListener("click", () => printPurchaseDeclaration(editingDeclarationId));
+["#declarationSearch", "#declarationStatusFilter", "#declarationCategoryFilter", "#declarationDateFilter"].forEach(selector => {
+  document.querySelector(selector)?.addEventListener("input", renderPurchaseDeclarations);
+  document.querySelector(selector)?.addEventListener("change", renderPurchaseDeclarations);
 });
 
 document.querySelector("#contactForm").addEventListener("submit", async (e) => {

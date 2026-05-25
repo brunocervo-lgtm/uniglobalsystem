@@ -36,6 +36,7 @@
         <button data-view="vendedores">Vendedores</button>
         <button data-view="alerta" data-admin-only="true">Alerta</button>
         <button data-view="sucata">Sucata por peso</button>
+        <button data-view="declaracaoCompra">Declaração de Compra</button>
         <button data-view="venda">Saida / Venda</button>
         <button data-view="contasReceber">Contas a receber</button>
         <button data-view="inventarioVendas">Inventario de produtos</button>
@@ -244,8 +245,10 @@
               </label>
               <label>Nome / Razão social <input name="name" required placeholder="Nome do cliente ou fornecedor" /></label>
               <label>CPF / CNPJ <input name="document" placeholder="Documento" /></label>
+              <label>RG / IE <input name="rgIe" placeholder="RG ou inscrição estadual" /></label>
               <label>Telefone <input name="phone" placeholder="WhatsApp / telefone" /></label>
               <label>E-mail <input name="email" type="email" placeholder="email@empresa.com" /></label>
+              <label>Chave Pix <input name="pixKey" placeholder="CPF, e-mail, telefone ou chave aleatória" /></label>
               <label>Contato responsável <input name="contactPerson" placeholder="Pessoa de contato" /></label>
               <label>Cashback vendedor (%) <input name="cashbackPercent" type="number" min="0" step="0.01" /></label>
               <label>Endereço <input name="address" placeholder="Rua, número, cidade" /></label>
@@ -293,6 +296,118 @@
           <div id="scrapPreview" class="calculation"></div>
           <div class="actions"><button class="primary-btn">Salvar sucata</button></div>
         </form>
+      </section>
+
+      <section id="declaracaoCompra" class="view">
+        <div class="content-grid">
+          <form id="purchaseDeclarationForm" class="panel form-panel slim">
+            <div class="panel-head">
+              <h2>Declaração de Compra</h2>
+              <span id="nextDeclarationCode">Nova declaração</span>
+            </div>
+            <div class="actions inline-actions">
+              <button type="button" id="newPurchaseDeclarationBtn" class="secondary-btn">Nova declaração</button>
+              <button type="button" id="generateDeclarationPdfBtn" class="secondary-btn">Gerar PDF</button>
+              <button type="button" id="printDeclarationPdfBtn" class="secondary-btn">Imprimir PDF</button>
+            </div>
+            <div class="form-grid two">
+              <label>Compra vinculada
+                <select name="purchaseItemId" id="declarationPurchaseItem">
+                  <option value="">Criar nova compra pela declaração</option>
+                </select>
+              </label>
+              <label>Status
+                <select name="status">
+                  <option>Rascunho</option>
+                  <option>PDF gerado</option>
+                  <option>Aguardando assinatura</option>
+                  <option>Assinada/anexada</option>
+                  <option>Finalizada</option>
+                </select>
+              </label>
+              <label>Fornecedor cadastrado
+                <select name="supplierId" id="declarationSupplierSelect">
+                  <option value="">Selecione o fornecedor</option>
+                </select>
+              </label>
+              <label>Data da compra <input name="purchaseDate" type="date" required /></label>
+              <label>Nome / Razão social <input name="supplierName" required /></label>
+              <label>CPF / CNPJ <input name="supplierDocument" /></label>
+              <label>RG / IE <input name="supplierRgIe" /></label>
+              <label>Telefone <input name="supplierPhone" /></label>
+              <label>E-mail <input name="supplierEmail" type="email" /></label>
+              <label>Chave Pix <input name="supplierPix" /></label>
+              <label class="wide">Endereço <input name="supplierAddress" /></label>
+              <label class="wide">Descrição dos materiais <textarea name="description" rows="4" required></textarea></label>
+              <label>Categoria
+                <select name="category">
+                  <option>sucata</option>
+                  <option>peça usada</option>
+                  <option>produto reaproveitado</option>
+                  <option>eletrônico</option>
+                  <option>metal</option>
+                  <option>outros</option>
+                </select>
+              </label>
+              <label>Quantidade <input name="quantity" type="number" min="0" step="1" /></label>
+              <label>Peso aproximado kg <input name="weight" type="number" min="0" step="0.01" /></label>
+              <label>Valor pago <input name="paidValue" type="number" min="0" step="0.01" required /></label>
+              <label>Forma de pagamento
+                <select name="paymentMethod">
+                  <option>Pix</option>
+                  <option>dinheiro</option>
+                  <option>transferência</option>
+                  <option>outro</option>
+                </select>
+              </label>
+              <label class="photo-field wide">Fotos do material (1 a 6)
+                <input name="materialPhotos" type="file" accept="image/*" capture="environment" multiple />
+                <small>Obrigatório anexar pelo menos uma foto.</small>
+              </label>
+              <label class="photo-field wide">Comprovante de pagamento
+                <input name="paymentProof" type="file" accept="image/*,.pdf" capture="environment" />
+              </label>
+              <label class="photo-field wide">Anexar declaração assinada
+                <input name="signedDocument" type="file" accept="image/*,.pdf" capture="environment" />
+              </label>
+              <label class="wide">Observações <textarea name="notes" rows="3"></textarea></label>
+            </div>
+            <div id="declarationPreview" class="calculation"></div>
+            <div class="actions"><button class="primary-btn">Salvar declaração</button></div>
+          </form>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Declarações</h2>
+              <span id="purchaseDeclarationsCount"></span>
+            </div>
+            <div class="dashboard-filters">
+              <label>Buscar <input id="declarationSearch" placeholder="Número, fornecedor, CPF/CNPJ..." /></label>
+              <label>Status
+                <select id="declarationStatusFilter">
+                  <option value="">Todos</option>
+                  <option>Rascunho</option>
+                  <option>PDF gerado</option>
+                  <option>Aguardando assinatura</option>
+                  <option>Assinada/anexada</option>
+                  <option>Finalizada</option>
+                </select>
+              </label>
+              <label>Categoria
+                <select id="declarationCategoryFilter">
+                  <option value="">Todas</option>
+                  <option>sucata</option>
+                  <option>peça usada</option>
+                  <option>produto reaproveitado</option>
+                  <option>eletrônico</option>
+                  <option>metal</option>
+                  <option>outros</option>
+                </select>
+              </label>
+              <label>Data <input id="declarationDateFilter" type="date" /></label>
+            </div>
+            <div id="purchaseDeclarationList" class="inventory-list"></div>
+          </section>
+        </div>
       </section>
 
       <section id="vendedores" class="view">
@@ -707,6 +822,6 @@
     </dialog>
 
     <div id="toast" role="status"></div>
-    <script src="app.js?v=20260520-1410"></script>
+    <script src="app.js?v=20260525-1015"></script>
   </body>
 </html>
